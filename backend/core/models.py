@@ -1,6 +1,7 @@
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 
+
 # -------------------------
 # Sede
 # -------------------------
@@ -37,7 +38,9 @@ class Facultad(models.Model):
 class Escuela(models.Model):
     id_escuela = models.AutoField(primary_key=True)
     nombre = models.CharField(max_length=200)
-    facultad = models.ForeignKey(Facultad, on_delete=models.CASCADE,null=True,blank=True)
+    facultad = models.ForeignKey(
+        Facultad, on_delete=models.CASCADE, null=True, blank=True
+    )
 
     def __str__(self):
         return self.nombre
@@ -48,32 +51,33 @@ class Escuela(models.Model):
 # -------------------------
 class Persona(models.Model):
     id_persona = models.AutoField(primary_key=True)
-    nombre = models.CharField(max_length=200,null=True,blank=False)
-    tipo_documento = models.CharField(max_length=100,null=True,blank=True)
+    nombre = models.CharField(max_length=200, null=True, blank=False)
+    tipo_documento = models.CharField(max_length=100, null=True, blank=True)
     numero_documento = models.PositiveBigIntegerField(
-        validators=[
-            MinValueValidator(100000),
-            MaxValueValidator(9999999999)
-        ],
-        null=True,blank=True)
-    edad = models.PositiveIntegerField(null=True,blank=True)
-    correo = models.EmailField(null=True,blank=True)
-    sexo = models.CharField(max_length=20,null=True,blank=False)
-    telefono = models.PositiveIntegerField(
-        validators=[
-            MinValueValidator(1_000_000_000),   # mínimo 10 dígitos
-            MaxValueValidator(9_999_999_999),   # máximo 10 dígitos
-        ],null=True,blank=True
+        validators=[MinValueValidator(100000), MaxValueValidator(9999999999)],
+        unique=True,
+        null=True,
+        blank=True,
     )
-    estamento = models.CharField(max_length=50,null=True, blank = False)
-    escuela = models.ForeignKey(Escuela, on_delete=models.SET_NULL, null=True,blank=True)
+    edad = models.PositiveIntegerField(null=True, blank=True)
+    correo = models.EmailField(null=True, blank=True)
+    sexo = models.CharField(max_length=20, null=True, blank=False)
+    telefono = models.BigIntegerField(
+        validators=[MinValueValidator(1000000000), MaxValueValidator(9999999999)],
+        null=True,
+        blank=True
+    )   
+    estamento = models.CharField(max_length=50, null=True, blank=False)
+    escuela = models.ForeignKey(
+        Escuela, on_delete=models.SET_NULL, null=True, blank=True
+    )
 
     def __str__(self):
         return self.nombre
 
 
 class Estudiante(Persona):
-    semestre = models.PositiveIntegerField(null=True,blank=True)
+    semestre = models.PositiveIntegerField(null=True, blank=True)
 
     def __str__(self):
         return f"Estudiante: {self.nombre}"
@@ -95,9 +99,11 @@ class Indicador(models.Model):
 # -------------------------
 class Actividad(models.Model):
     id_actividad = models.AutoField(primary_key=True)
-    nombre = models.CharField(max_length=200,null=False,blank=False)
-    anio = models.PositiveIntegerField(null=True,blank=False)
-    indicador = models.ForeignKey(Indicador, on_delete=models.SET_NULL, null=True,blank=True)
+    nombre = models.CharField(max_length=200, null=False, blank=False)
+    anio = models.PositiveIntegerField(null=True, blank=False)
+    indicador = models.ForeignKey(
+        Indicador, on_delete=models.SET_NULL, null=True, blank=True
+    )
 
     def __str__(self):
         return self.nombre
@@ -122,10 +128,10 @@ class Participacion(models.Model):
     id_participacion = models.AutoField(primary_key=True)
     persona = models.ForeignKey(Persona, on_delete=models.CASCADE)
     actividad = models.ForeignKey(Actividad, on_delete=models.CASCADE)
-    fecha = models.DateField(null=True,blank=False)
+    fecha = models.DateField(null=True, blank=False)
 
     # Relación N-N hacia Sede mediante Lugar
-    sedes = models.ManyToManyField(Sede, through="Lugar",blank=False)
+    sedes = models.ManyToManyField(Sede, through="Lugar", blank=False)
 
     def __str__(self):
         return f"Participación {self.id_participacion}"
@@ -160,7 +166,9 @@ class ActividadConsolidada(models.Model):
 class Consolidacion(models.Model):
     id_consolidacion = models.AutoField(primary_key=True)
     actividad = models.ForeignKey(Actividad, on_delete=models.CASCADE)
-    actividad_consolidada = models.ForeignKey(ActividadConsolidada, on_delete=models.CASCADE)
+    actividad_consolidada = models.ForeignKey(
+        ActividadConsolidada, on_delete=models.CASCADE
+    )
 
     def __str__(self):
         return f"Consolidación {self.id_consolidacion}"
