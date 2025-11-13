@@ -60,7 +60,7 @@ class Persona(models.Model):
         blank=True,
     )
     edad = models.PositiveIntegerField(null=True, blank=True)
-    correo = models.EmailField(null=True, blank=True)
+    correo = models.EmailField(null=True, blank=True,unique=True)
     sexo = models.CharField(max_length=20, null=True, blank=False)
     telefono = models.BigIntegerField(
         validators=[MinValueValidator(1000000000), MaxValueValidator(9999999999)],
