@@ -1,10 +1,8 @@
 import pandas as pd
-import re
-from datetime import datetime
 from django.core.management.base import BaseCommand
-from django.db import transaction, IntegrityError
+from datetime import datetime
 from django.db.models import Q
-from rapidfuzz import fuzz
+import re
 from core.models import (
     Persona, Estudiante, Escuela, Facultad, Actividad, Indicador,
     Participacion, Lugar, Sede, Tema, TemaAsociado, Prioridad,
@@ -12,268 +10,111 @@ from core.models import (
     LineaProyecto, AsociacionProyecto, ActividadConsolidada,
     Consolidacion
 )
+from fuzzywuzzy import fuzz
 
-
-# -------------------------
-# Utilidades de limpieza
-# -------------------------
 def limpiar(valor):
-    """Convierte '', 'NULL', NaN en None y trim."""
+    """Convierte '', 'NULL', NaN en None."""
     if pd.isna(valor) or str(valor).strip().upper() in ['', 'NULL', 'NONE']:
         return None
     return str(valor).strip()
-
-
-def normalizar_nombre(nombre):
-    if not nombre:
-        return None
-    s = str(nombre).strip().lower()
-    s = re.sub(r'\s+', ' ', s)
-    return s
-
-
-def limpiar_telefono(tel):
-    if not tel:
-        return None
-    s = str(tel)
-    s = re.sub(r'\D', '', s)
-    if len(s) < 7 or len(s) > 10:
-        return None
-    return int(s)
 
 
 def convertir_fecha(fecha_str):
     """
     Normaliza diferentes separadores y formatos de fecha comunes.
     Devuelve objeto date o None si no se puede parsear.
-    Asume formato día/mes/año (day-first) para ambigüedades.
+    Asume formato día/mes/año (day-first) para ambigüedades como 01/02/03.
     """
     if not fecha_str or str(fecha_str).strip() == "":
         return None
 
     s = str(fecha_str).strip()
+
+    # Reemplazar cualquier caracter no numérico por '/' (acepta '-', '.', ' ', etc.)
     s_norm = re.sub(r"[^\d]", "/", s)
 
+    # Lista de formatos a probar (day-first preferido)
     formatos = [
-        "%d/%m/%Y",
-        "%d/%m/%y",
-        "%Y/%m/%d",
-        "%d/%m",
+        "%d/%m/%Y",  # 24/05/2024
+        "%d/%m/%y",  # 24/05/24
+        "%Y/%m/%d",  # 2024/05/24
+        "%d/%m",     # 24/05 -> si quieres asumir año actual (opcional)
     ]
 
     for fmt in formatos:
         try:
             fecha = datetime.strptime(s_norm, fmt).date()
+            # Opcional: si %y produce año muy antiguo, ajustar (raro con %y moderno)
             if fecha.year < 1900 or fecha.year > 2100:
+                # protección adicional si llega algo raro
                 continue
             return fecha
         except ValueError:
             continue
 
-    # Aviso (stdout) en vez de print
+    # Si no pudo parsear, informar y devolver None
+    print(f"⚠ Fecha inválida encontrada: {fecha_str} → se asigna NULL")
     return None
 
 
-# -------------------------
-# Fuzzy matching
-# -------------------------
-def calcular_score_fuzzy(p_obj, row):
-    """
-    Pondera nombre, sexo y estamento (puedes ajustar pesos).
-    Retorna un score 0..100.
-    """
-    nombre_row = normalizar_nombre(row.get("Nombre"))
-    nombre_p = normalizar_nombre(p_obj.nombre) if p_obj.nombre else None
-    score_nombre = fuzz.ratio(nombre_p, nombre_row) if nombre_p and nombre_row else 0
 
-    sexo_row = (row.get("Sexo") or "").strip().lower()
-    sexo_p = (p_obj.sexo or "").strip().lower()
-    score_sexo = 100 if sexo_row and sexo_p and sexo_row == sexo_p else 0
-
-    est_row = (row.get("Estamento") or "").strip().lower()
-    est_p = (p_obj.estamento or "").strip().lower()
-    score_estamento = 100 if est_row and est_p and est_row == est_p else 0
-
-    # Ponderaciones (ajustables)
-    score = score_nombre * 0.65 + score_sexo * 0.15 + score_estamento * 0.20
-    return score
-
-
-def buscar_persona_existente_unificada(row):
-    """
-    Busca persona o estudiante existente siguiendo prioridad:
-    1) documento (estudiante -> persona)
-    2) correo (estudiante -> persona)
-    3) fuzzy match (solo si no hay doc ni correo y hay nombre)
-    Retorna instancia (Persona o Estudiante) o None.
-    """
-    numero_documento = row.get("N° Documento de Identidad") or row.get("Numero_documento") or None
-    correo = (row.get("Correo") or None)
-    nombre = row.get("Nombre") or None
-
-    # normalizar correo
-    correo_norm = correo.strip().lower() if correo else None
-
-    # 1) documento exacto
-    if numero_documento:
-        # intentar como entero si viene con .0 u otros
-        num_str = str(numero_documento).strip()
-        num_digits = re.sub(r'\D', '', num_str)
-        if num_digits:
-            try:
-                num_int = int(num_digits)
-            except ValueError:
-                num_int = None
-        else:
-            num_int = None
-
-        if num_int:
-            est = Estudiante.objects.filter(numero_documento=num_int).first()
-            if est:
-                return est
-            pers = Persona.objects.filter(numero_documento=num_int).first()
-            if pers:
-                return pers
-
-    # 2) correo exacto
-    if correo_norm:
-        est = Estudiante.objects.filter(correo__iexact=correo_norm).first()
-        if est:
-            return est
-        pers = Persona.objects.filter(correo__iexact=correo_norm).first()
-        if pers:
-            return pers
-
-    # 3) fuzzy match (solo si hay nombre)
-    if nombre:
-        nombre_norm = normalizar_nombre(nombre)
-        # Buscar posibles por primer token del nombre para acotar
-        primer_token = nombre_norm.split()[0] if nombre_norm.split() else nombre_norm
-        posibles = Persona.objects.filter(nombre__icontains=primer_token)[:500]  # limitar
-        mejor = None
-        mejor_score = 0
-        for p in posibles:
-            score = calcular_score_fuzzy(p, row)
-            if score > mejor_score:
-                mejor_score = score
-                mejor = p
-        if mejor_score >= 82:
-            return mejor
-
-    return None
-
-
-# -------------------------
-# Validaciones CSV
-# -------------------------
-def detectar_correos_duplicados_csv(df):
-    # Normaliza correos y cuenta
-    if 'Correo' not in df.columns:
-        return {}
-    s = df['Correo'].fillna("").astype(str).str.strip().str.lower()
-    counts = s[s != ""].value_counts()
-    dup = counts[counts > 1].to_dict()
-    return dup
-
-
-# -------------------------
-# COMMAND
-# -------------------------
 class Command(BaseCommand):
-    help = "Importa datos desde CSV y llena DB (mejorado: persona fuzzy, validaciones y entidades relacionadas)."
+    help = "Importa datos desde un CSV y llena la base de datos."
 
     def add_arguments(self, parser):
         parser.add_argument('archivo_csv', type=str, help='Ruta del archivo CSV')
 
-    @transaction.atomic
     def handle(self, *args, **options):
         archivo = options['archivo_csv']
-        self.stdout.write(self.style.WARNING(f"Leyendo archivo: {archivo}"))
+
+        self.stdout.write(self.style.SUCCESS(f"Leyendo archivo: {archivo}"))
 
         try:
             df = pd.read_csv(archivo, dtype=str)
-        except Exception:
+        except:
             df = pd.read_csv(archivo, sep=";", dtype=str)
 
-        total = len(df)
-        self.stdout.write(self.style.SUCCESS(f"Total filas: {total}"))
+        self.stdout.write(self.style.WARNING(f"Total filas: {len(df)}"))
 
-        # Pre-check: correos duplicados en CSV
-        dup_correo = detectar_correos_duplicados_csv(df)
-        if dup_correo:
-            self.stdout.write(self.style.WARNING("⚠ Correos repetidos detectados en CSV (correo: ocurrencias):"))
-            for correo, cnt in list(dup_correo.items())[:50]:
-                self.stdout.write(self.style.WARNING(f"  - {correo}: {cnt} filas"))
-            # no abortamos: solo avisamos; lógica posterior tratará colisiones según reglas
-
-        # Iterar filas
-        for i, raw_row in df.iterrows():
-            # Mapear claves según tu CSV original
-            row = {k: limpiar(v) for k, v in raw_row.items()}
-
-            # Campos básicos
-            anio = row.get("Año") or row.get("Anio")
-            actividad_nombre = row.get("Actividad")
-            actividad_consolidada_nombre = row.get("Actividad consolidada")
-            linea_proyecto_nombre = row.get("Linea del Proyecto")
-            indicador_nombre = row.get("Indicador")
-
-            fecha = convertir_fecha(limpiar(row.get("Fecha")))
-            sede_nombre = row.get("Sede")
-            estamento = row.get("Estamento")
-
-            facultad_nombre = row.get("Facultad/Instituto/Área") or row.get("Facultad")
-            escuela_nombre = row.get("Escuela/Programa Académico") or row.get("Escuela/Programa") or row.get("Escuela/Programa Académico")
-
-            nombre_persona = row.get("Nombre")
-            tipo_documento = row.get("Tipo de Documento") or row.get("Tipo_documento")
-            numero_documento_raw = row.get("N° Documento de Identidad") or row.get("Numero_documento")
-            edad = row.get("Edad")
-            telefono_raw = row.get("Telefono")
-            correo_raw = row.get("Correo")
-            sexo = row.get("Sexo")
-            semestre_raw = row.get("Semestre")
-
-            tema_nombre = row.get("Tema")
-            prioridad_nombre = row.get("Prioridad")
-            estrategia_nombre = row.get("Linea de estrategia") or row.get("Linea de Estrategia")
-
-            # Normalizaciones/parseos
-            correo_normalizado = correo_raw.strip().lower() if correo_raw else None
-
-            # numero_documento -> int si es posible
-            numero_documento = None
-            if numero_documento_raw:
-                s = re.sub(r'[^\d]', '', str(numero_documento_raw))
-                if s.isdigit():
-                    try:
-                        numero_documento = int(s)
-                    except ValueError:
-                        numero_documento = None
-
-            telefono = limpiar_telefono(telefono_raw)
-
-            # Semestre/edad -> int si es digito
-            semestre = None
-            if semestre_raw and str(semestre_raw).isdigit():
-                try:
-                    semestre = int(float(semestre_raw))
-                except Exception:
-                    semestre = None
-
-            edad_int = None
-            if edad and str(edad).isdigit():
-                try:
-                    edad_int = int(float(edad))
-                except Exception:
-                    edad_int = None
+        for i, row in df.iterrows():
 
             # ---------------------------------------------------------
-            # Facultad y Escuela
+            # ✅ 1. Limpieza de columnas del CSV
+            # ---------------------------------------------------------
+            anio = limpiar(row.get("Año"))
+            actividad_nombre = limpiar(row.get("Actividad"))
+            actividad_consolidada_nombre = limpiar(row.get("Actividad consolidada"))
+            linea_proyecto_nombre = limpiar(row.get("Linea del Proyecto"))
+            indicador_nombre = limpiar(row.get("Indicador"))
+
+            fecha = convertir_fecha(limpiar(row.get("Fecha")))
+            sede_nombre = limpiar(row.get("Sede"))
+            estamento = limpiar(row.get("Estamento"))
+
+            facultad_nombre = limpiar(row.get("Facultad/Instituto/Área"))
+            escuela_nombre = limpiar(row.get("Escuela/Programa Académico"))
+
+            nombre_persona = limpiar(row.get("Nombre"))
+            tipo_documento = limpiar(row.get("Tipo de Documento"))
+            numero_documento = limpiar(row.get("N° Documento de Identidad"))
+            edad = limpiar(row.get("Edad"))
+            telefono = limpiar(row.get("Telefono"))
+            correo = limpiar(row.get("Correo"))
+            sexo = limpiar(row.get("Sexo"))
+            semestre = limpiar(row.get("Semestre"))
+
+            tema_nombre = limpiar(row.get("Tema"))
+            prioridad_nombre = limpiar(row.get("Prioridad"))
+            estrategia_nombre = limpiar(row.get("Linea de estrategia"))
+
+            # ---------------------------------------------------------
+            # ✅ 2. Facultad y Escuela
             # ---------------------------------------------------------
             facultad_obj = None
             if facultad_nombre:
-                facultad_obj, _ = Facultad.objects.get_or_create(nombre=facultad_nombre)
+                facultad_obj, _ = Facultad.objects.get_or_create(
+                    nombre=facultad_nombre
+                )
 
             escuela_obj = None
             if escuela_nombre:
@@ -283,136 +124,192 @@ class Command(BaseCommand):
                 )
 
             # ---------------------------------------------------------
-            # Persona / Estudiante (Lógica robusta)
+            # ✅ 3. Persona o Estudiante (LÓGICA UNIFICADA CON FUZZY)
             # ---------------------------------------------------------
+            # Normalizar valores
+            correo_normalizado = (correo or "").strip().lower() if correo else None
+            numero_documento_int = None
+            if numero_documento and str(numero_documento).strip() and str(numero_documento).isdigit():
+                numero_documento_int = int(numero_documento)
+            
+            telefono_int = None
+            if telefono and str(telefono).strip() and str(telefono).isdigit():
+                telefono_int = int(telefono)
+
+            # ---- PASO 1: Búsqueda por documento O correo (si existen)
             persona_obj = None
 
-            # Construir una fila simplificada para la función de búsqueda
-            search_row = {
-                "Nombre": nombre_persona,
-                "Correo": correo_normalizado,
-                "N° Documento de Identidad": numero_documento_raw,
-                "Sexo": sexo,
-                "Estamento": estamento,
-            }
+            if numero_documento_int:
+                persona_obj = Persona.objects.filter(numero_documento=numero_documento_int).first()
 
-            persona_obj = buscar_persona_existente_unificada(search_row)
+            if not persona_obj and correo_normalizado:
+                persona_obj = Persona.objects.filter(correo__iexact=correo_normalizado).first()
 
-            # Si existen duplicados en CSV por correo y este correo aparece con diferentes documentos,
-            # preferimos registrar advertencia y saltar el update para evitar mezclar identidades.
-            if correo_normalizado and correo_normalizado in dup_correo:
-                # Verificar si los documentos asociados a ese correo en CSV difieren
-                rows_mismo_correo = df[df['Correo'].fillna("").astype(str).str.strip().str.lower() == correo_normalizado]
-                documentos = set()
-                for _, r in rows_mismo_correo.iterrows():
-                    nd = limpiar(r.get("N° Documento de Identidad") or r.get("Numero_documento"))
-                    if nd:
-                        nd_digits = re.sub(r'[^\d]', '', str(nd))
-                        if nd_digits:
-                            documentos.add(nd_digits)
-                if len(documentos) > 1:
-                    # advertencia y no intentar unificar por correo
-                    self.stdout.write(self.style.WARNING(
-                        f"Fila {i+1}: correo {correo_normalizado} aparece con múltiples documentos en CSV {documentos}. Evitando unificación por correo."
-                    ))
-                    # Forzar que no se utilice persona_obj encontrada por correo (si la hubo)
-                    if persona_obj and getattr(persona_obj, 'correo', None) and str(getattr(persona_obj, 'correo')).strip().lower() == correo_normalizado:
-                        persona_obj = None
+            # ---- PASO 2: Si no encontró Y NO tiene documento ni correo, buscar por FUZZY MATCHING
+            # IMPORTANTE: Si tiene documento o correo pero no coincide con existentes → NO hacer fuzzy
+            # Solo fuzzy si AMBOS están vacíos
+            if not persona_obj and not numero_documento_int and not correo_normalizado:
+                # Sólo intentar fuzzy si la fila tiene al menos 2 campos identificadores
+                identificadores_fila = 0
+                if nombre_persona: identificadores_fila += 1
+                if tipo_documento: identificadores_fila += 1
+                if sexo: identificadores_fila += 1
+                if edad and str(edad).isdigit(): identificadores_fila += 1
+                if telefono_int: identificadores_fila += 1
+                if estamento: identificadores_fila += 1
+                if escuela_obj: identificadores_fila += 1
 
-            # Si se encontró persona/estudiante -> actualizar sin sobreescribir datos buenos
+                if identificadores_fila >= 2:
+                    # Buscar candidatos (limitar búsqueda por nombre si existe)
+                    candidatos = Persona.objects.all()
+                    if nombre_persona:
+                        primer_token = nombre_persona.split()[0]
+                        candidatos = candidatos.filter(nombre__icontains=primer_token)
+                    else:
+                        # Sin nombre, limitar a últimos registros para no iterar todo
+                        candidatos = candidatos.order_by('-id_persona')[:1000]
+
+                    mejor_match = None
+                    mejor_score = 0.0
+
+                    for p in candidatos:
+                        campos_comparados = 0
+                        campos_coinciden = 0
+
+                        # Comparar NOMBRE (si ambos tienen valor)
+                        if p.nombre and nombre_persona:
+                            campos_comparados += 1
+                            if fuzz.token_sort_ratio(p.nombre.lower(), nombre_persona.lower()) >= 85:
+                                campos_coinciden += 1
+
+                        # Comparar TIPO_DOCUMENTO
+                        if p.tipo_documento and tipo_documento:
+                            campos_comparados += 1
+                            if p.tipo_documento.lower() == tipo_documento.lower():
+                                campos_coinciden += 1
+
+                        # Comparar SEXO
+                        if p.sexo and sexo:
+                            campos_comparados += 1
+                            if p.sexo.lower()[:1] == sexo.lower()[:1]:
+                                campos_coinciden += 1
+
+                        # Comparar EDAD (permitir ±1 año)
+                        if p.edad and edad and str(edad).isdigit():
+                            campos_comparados += 1
+                            if abs(p.edad - int(edad)) <= 1:
+                                campos_coinciden += 1
+
+                        # Comparar ESTAMENTO
+                        if p.estamento and estamento:
+                            campos_comparados += 1
+                            if p.estamento.lower() == estamento.lower():
+                                campos_coinciden += 1
+
+                        # Comparar ESCUELA
+                        if p.escuela and escuela_obj:
+                            campos_comparados += 1
+                            if p.escuela.id_escuela == escuela_obj.id_escuela:
+                                campos_coinciden += 1
+
+                        # Calcular score solo si comparamos al menos 2 campos
+                        if campos_comparados >= 2:
+                            score = campos_coinciden / campos_comparados
+                            if score > mejor_score:
+                                mejor_score = score
+                                mejor_match = p
+
+                    # Aceptar match si ≥80% coincide
+                    if mejor_match and mejor_score >= 0.80:
+                        persona_obj = mejor_match
+
+            # ---- PASO 3: Actualizar o crear Persona
             if persona_obj:
-                updated = False
-                # Si es instancia de Estudiante, usamos sus campos; si es Persona también funciona
-                if not persona_obj.nombre and nombre_persona:
-                    persona_obj.nombre = normalizar_nombre(nombre_persona)
-                    updated = True
-                if not persona_obj.tipo_documento and tipo_documento:
+                # 🔄 ACTUALIZAR EXISTENTE
+                if nombre_persona and (not persona_obj.nombre or persona_obj.nombre.strip() == ""):
+                    persona_obj.nombre = nombre_persona
+                if tipo_documento and (not persona_obj.tipo_documento or persona_obj.tipo_documento.strip() == ""):
                     persona_obj.tipo_documento = tipo_documento
-                    updated = True
-                if not persona_obj.numero_documento and numero_documento:
-                    persona_obj.numero_documento = numero_documento
-                    updated = True
-                if not getattr(persona_obj, "correo", None) and correo_normalizado:
-                    persona_obj.correo = correo_normalizado
-                    updated = True
-                if not getattr(persona_obj, "telefono", None) and telefono:
-                    persona_obj.telefono = telefono
-                    updated = True
-                if not getattr(persona_obj, "sexo", None) and sexo:
+                if sexo and (not persona_obj.sexo or persona_obj.sexo.strip() == ""):
                     persona_obj.sexo = sexo
-                    updated = True
-                if not getattr(persona_obj, "estamento", None) and estamento:
+                if edad and str(edad).isdigit() and not persona_obj.edad:
+                    persona_obj.edad = int(edad)
+                if telefono_int and not persona_obj.telefono:
+                    persona_obj.telefono = telefono_int
+                # Antes de asignar correo/verificar único: asegurarse que no existe en otra persona
+                if correo_normalizado and not persona_obj.correo:
+                    conflicto = Persona.objects.filter(correo__iexact=correo_normalizado).exclude(pk=persona_obj.pk).exists()
+                    if not conflicto:
+                        persona_obj.correo = correo_normalizado
+                    else:
+                        # Si el correo ya está en otra fila, evitar asignarlo aquí (log opcional)
+                        pass
+                if estamento and (not persona_obj.estamento or persona_obj.estamento.strip() == ""):
                     persona_obj.estamento = estamento
-                    updated = True
-                # Si es Estudiante y tenemos semestre
-                if hasattr(persona_obj, "semestre") and (persona_obj.semestre in (None, "") ) and semestre:
-                    try:
-                        persona_obj.semestre = int(semestre)
-                        updated = True
-                    except Exception:
+                if escuela_obj and not persona_obj.escuela:
+                    persona_obj.escuela = escuela_obj
+                # Igual para número de documento: sólo asignar si no existe en otra persona
+                if numero_documento_int and not persona_obj.numero_documento:
+                    conflicto_doc = Persona.objects.filter(numero_documento=numero_documento_int).exclude(pk=persona_obj.pk).exists()
+                    if not conflicto_doc:
+                        persona_obj.numero_documento = numero_documento_int
+                    else:
+                        # no asignar para evitar duplicados; log opcional
                         pass
 
-                try:
-                    if updated:
-                        persona_obj.save()
-                except IntegrityError as e:
-                    self.stdout.write(self.style.ERROR(f"Fila {i+1}: IntegrityError al actualizar persona: {e}"))
-                    # continuar sin abortar
-
+                persona_obj.save()
             else:
-                # Crear nuevo (Estudiante si trae semestre, sino Persona)
-                nombre_guardar = normalizar_nombre(nombre_persona) or "SIN NOMBRE"
-                if semestre:
-                    # Crear Estudiante
-                    try:
-                        Estudiante.objects.create(
-                            nombre=nombre_guardar,
-                            tipo_documento=tipo_documento,
-                            numero_documento=numero_documento,
-                            edad=edad_int,
-                            telefono=telefono,
-                            correo=correo_normalizado,
-                            sexo=sexo,
-                            estamento=estamento,
-                            escuela=escuela_obj,
-                            semestre=semestre
-                        )
-                    except IntegrityError as e:
-                        self.stdout.write(self.style.ERROR(f"Fila {i+1}: Error creando Estudiante (IntegrityError): {e}"))
+                # 🆕 CREAR NUEVO (solo con valores que existen)
+                crear_datos = {
+                    "nombre": nombre_persona or "SIN NOMBRE",
+                }
+                # Agregar campos solo si tienen valor
+                if tipo_documento:
+                    crear_datos["tipo_documento"] = tipo_documento
+                if sexo:
+                    crear_datos["sexo"] = sexo
+                if edad and str(edad).isdigit():
+                    crear_datos["edad"] = int(edad)
+                if telefono_int:
+                    crear_datos["telefono"] = telefono_int
+                if correo_normalizado:
+                    crear_datos["correo"] = correo_normalizado
+                if estamento:
+                    crear_datos["estamento"] = estamento
+                if escuela_obj:
+                    crear_datos["escuela"] = escuela_obj
+                if numero_documento_int:
+                    crear_datos["numero_documento"] = numero_documento_int
+
+                # Determinar si es Estudiante o Persona normal
+                if semestre and str(semestre).isdigit():
+                    crear_datos["semestre"] = int(semestre)
+                    persona_obj = Estudiante.objects.create(**crear_datos)
                 else:
-                    try:
-                        Persona.objects.create(
-                            nombre=nombre_guardar,
-                            tipo_documento=tipo_documento,
-                            numero_documento=numero_documento,
-                            edad=edad_int,
-                            telefono=telefono,
-                            correo=correo_normalizado,
-                            sexo=sexo,
-                            estamento=estamento,
-                            escuela=escuela_obj
-                        )
-                    except IntegrityError as e:
-                        self.stdout.write(self.style.ERROR(f"Fila {i+1}: Error creando Persona (IntegrityError): {e}"))
+                    persona_obj = Persona.objects.create(**crear_datos)
 
             # ---------------------------------------------------------
-            # Indicador
+            # ✅ 4. Indicador
             # ---------------------------------------------------------
             indicador_obj = None
             if indicador_nombre:
-                indicador_obj, _ = Indicador.objects.get_or_create(nombre=indicador_nombre)
+                indicador_obj, _ = Indicador.objects.get_or_create(
+                    nombre=indicador_nombre
+                )
 
             # ---------------------------------------------------------
-            # Actividad
+            # ✅ 5. Actividad
             # ---------------------------------------------------------
             actividad_obj, _ = Actividad.objects.get_or_create(
                 nombre=actividad_nombre,
                 anio=int(float(anio)) if anio else None,
-                defaults={"indicador": indicador_obj}
+                defaults={
+                    "indicador": indicador_obj
+                }
             )
 
             # ---------------------------------------------------------
-            # Actividad consolidada y su relación
+            # ✅ 6. Actividad consolidada y su relación
             # ---------------------------------------------------------
             if actividad_consolidada_nombre:
                 act_con_obj, _ = ActividadConsolidada.objects.get_or_create(
@@ -424,7 +321,7 @@ class Command(BaseCommand):
                 )
 
             # ---------------------------------------------------------
-            # Línea de proyecto
+            # ✅ 7. Línea de proyecto
             # ---------------------------------------------------------
             if linea_proyecto_nombre:
                 linea_proj_obj, _ = LineaProyecto.objects.get_or_create(
@@ -436,47 +333,32 @@ class Command(BaseCommand):
                 )
 
             # ---------------------------------------------------------
-            # Sede
+            # ✅ 8. Sede
             # ---------------------------------------------------------
             sede_obj = None
             if sede_nombre:
                 sede_obj, _ = Sede.objects.get_or_create(nombre=sede_nombre)
 
             # ---------------------------------------------------------
-            # Participación -> vinculada a la persona/estudiante creada o encontrada
+            # ✅ 9. Participación
             # ---------------------------------------------------------
-            # Rebuscar la persona objetiva por correo o documento para la relación (por si se creó arriba)
-            participante = None
-            if numero_documento:
-                participante = Estudiante.objects.filter(numero_documento=numero_documento).first() or Persona.objects.filter(numero_documento=numero_documento).first()
-            if not participante and correo_normalizado:
-                participante = Estudiante.objects.filter(correo__iexact=correo_normalizado).first() or Persona.objects.filter(correo__iexact=correo_normalizado).first()
+            part_obj, _ = Participacion.objects.get_or_create(
+                persona=persona_obj,
+                actividad=actividad_obj,
+                fecha=fecha
+            )
 
-            # Si sigue sin participante, intentar fuzzy search (no ideal, pero para asegurar enlace)
-            if not participante and nombre_persona:
-                participante = Persona.objects.filter(nombre__icontains=normalizar_nombre(nombre_persona).split()[0]).first()
-
-            if participante:
-                part_obj, _ = Participacion.objects.get_or_create(
-                    persona=participante,
-                    actividad=actividad_obj,
-                    fecha=fecha
+            # ---------------------------------------------------------
+            # ✅ 10. Lugar (Participación ↔ Sede)
+            # ---------------------------------------------------------
+            if sede_obj:
+                Lugar.objects.get_or_create(
+                    participacion=part_obj,
+                    sede=sede_obj
                 )
 
-                # Lugar (Participación ↔ Sede)
-                if sede_obj:
-                    Lugar.objects.get_or_create(
-                        participacion=part_obj,
-                        sede=sede_obj
-                    )
-
-            else:
-                # Si no se pudo ligar la participación a persona alguna, crear una participación "huérfana" con persona NULL no es posible
-                # Opcional: podríamos crear una Persona "SIN NOMBRE" y ligarla, pero ya lo hicimos arriba en creación.
-                self.stdout.write(self.style.WARNING(f"Fila {i+1}: No se encontró/creó participante para ligar la Participación."))
-
             # ---------------------------------------------------------
-            # Tema
+            # ✅ 11. Tema
             # ---------------------------------------------------------
             if tema_nombre:
                 tema_obj, _ = Tema.objects.get_or_create(nombre=tema_nombre)
@@ -486,7 +368,7 @@ class Command(BaseCommand):
                 )
 
             # ---------------------------------------------------------
-            # Prioridad
+            # ✅ 12. Prioridad
             # ---------------------------------------------------------
             if prioridad_nombre:
                 prioridad_obj, _ = Prioridad.objects.get_or_create(nombre=prioridad_nombre)
@@ -496,7 +378,7 @@ class Command(BaseCommand):
                 )
 
             # ---------------------------------------------------------
-            # Línea de estrategia
+            # ✅ 13. Línea de estrategia
             # ---------------------------------------------------------
             if estrategia_nombre:
                 est_obj, _ = LineaEstrategia.objects.get_or_create(nombre=estrategia_nombre)
@@ -505,6 +387,7 @@ class Command(BaseCommand):
                     linea_estrategia=est_obj
                 )
 
+            # ---------------------------------------------------------
             self.stdout.write(self.style.SUCCESS(f"Fila {i+1} procesada"))
 
         self.stdout.write(self.style.SUCCESS("✅ Importación completada"))
