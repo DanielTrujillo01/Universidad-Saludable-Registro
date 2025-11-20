@@ -6,218 +6,166 @@ from .models import (
     Prioridad, PrioridadAsociada, LineaEstrategia, EstrategiaAsociada
 )
 
-# ---------------------------------------
+# -------------------------
 # Sede
-# ---------------------------------------
+# -------------------------
 class SedeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Sede
-        fields = '__all__'
+        fields = '__all__' # Incluye: id_sede, nombre
 
-
-# ---------------------------------------
-# Línea de Proyecto
-# ---------------------------------------
+# -------------------------
+# Línea de proyecto
+# -------------------------
 class LineaProyectoSerializer(serializers.ModelSerializer):
     class Meta:
         model = LineaProyecto
-        fields = '__all__'
+        fields = '__all__' # Incluye: id_linea_proyecto, nombre
 
-
-# ---------------------------------------
+# -------------------------
 # Facultad y Escuela
-# ---------------------------------------
+# -------------------------
 class FacultadSerializer(serializers.ModelSerializer):
     class Meta:
         model = Facultad
-        fields = '__all__'
-
+        fields = '__all__' # Incluye: id_facultad, nombre
 
 class EscuelaSerializer(serializers.ModelSerializer):
-    facultad = FacultadSerializer(read_only=True)
-    facultad_id = serializers.PrimaryKeyRelatedField(
-        queryset=Facultad.objects.all(), source='facultad', write_only=True
-    )
+    # Opcionalmente, para mostrar el nombre de la facultad en lugar de solo su ID
+    # facultad_nombre = serializers.CharField(source='facultad.nombre', read_only=True)
 
     class Meta:
         model = Escuela
-        fields = ['id_escuela', 'nombre', 'facultad', 'facultad_id']
+        fields = '__all__' # Incluye: id_escuela, nombre, facultad
 
-
-# ---------------------------------------
-# Persona y Estudiante
-# ---------------------------------------
+# -------------------------
+# Persona y Estudiante (herencia)
+# -------------------------
 class PersonaSerializer(serializers.ModelSerializer):
-    escuela = EscuelaSerializer(read_only=True)
-    escuela_id = serializers.PrimaryKeyRelatedField(
-        queryset=Escuela.objects.all(), source='escuela', write_only=True,
-        required=False, allow_null=True
-    )
-
     class Meta:
         model = Persona
-        fields = [
-            'id_persona', 'nombre', 'tipo_documento', 'numero_documento',
-            'edad', 'correo', 'sexo', 'telefono', 'estamento',
-            'escuela', 'escuela_id'
-        ]
+        fields = '__all__'
+        # Incluye: id_persona, nombre, tipo_documento, numero_documento, edad,
+        # correo, sexo, telefono, estamento, escuela
 
-
-class EstudianteSerializer(PersonaSerializer):
-    class Meta(PersonaSerializer.Meta):
+class EstudianteSerializer(serializers.ModelSerializer):
+    # Si quieres que herede todos los campos de Persona y añada 'semestre'
+    class Meta:
         model = Estudiante
-        fields = PersonaSerializer.Meta.fields + ['semestre']
+        fields = '__all__' # Incluye todos los campos de Persona + semestre
+        # Alternativamente, para incluir solo los campos específicos y el ID:
+        # fields = ('id_persona', 'semestre', 'nombre', 'correo', 'escuela', ...)
 
 
-# ---------------------------------------
+# -------------------------
 # Indicador
-# ---------------------------------------
+# -------------------------
 class IndicadorSerializer(serializers.ModelSerializer):
     class Meta:
         model = Indicador
-        fields = '__all__'
+        fields = '__all__' # Incluye: id_indicador, nombre
 
 
-# ---------------------------------------
+# -------------------------
 # Actividad
-# ---------------------------------------
+# -------------------------
 class ActividadSerializer(serializers.ModelSerializer):
-    indicador = IndicadorSerializer(read_only=True)
-    indicador_id = serializers.PrimaryKeyRelatedField(
-        queryset=Indicador.objects.all(), source='indicador',
-        write_only=True, allow_null=True, required=False
-    )
+    # Opcional: mostrar el nombre del indicador en el detalle de la actividad
+    # indicador_nombre = serializers.CharField(source='indicador.nombre', read_only=True)
 
     class Meta:
         model = Actividad
-        fields = ['id_actividad', 'nombre', 'anio', 'indicador', 'indicador_id']
+        fields = '__all__' # Incluye: id_actividad, nombre, indicador
 
 
-# ---------------------------------------
+# -------------------------
 # Asociación Proyecto
-# ---------------------------------------
+# -------------------------
 class AsociacionProyectoSerializer(serializers.ModelSerializer):
     class Meta:
         model = AsociacionProyecto
-        fields = '__all__'
+        fields = '__all__' # Incluye: id_asociacion_proyecto, linea_proyecto, actividad
 
 
-# ---------------------------------------
-# Lugar (intermedia)
-# ---------------------------------------
+# -------------------------
+# Lugar (tabla intermedia Participación ↔ Sede)
+# -------------------------
 class LugarSerializer(serializers.ModelSerializer):
-    sede = SedeSerializer(read_only=True)
-    sede_id = serializers.PrimaryKeyRelatedField(
-        queryset=Sede.objects.all(),
-        source='sede',
-        write_only=True
-    )
-
     class Meta:
         model = Lugar
-        fields = ['id_lugar', 'participacion', 'sede', 'sede_id']
+        fields = '__all__' # Incluye: id_lugar, participacion, sede
 
 
-# ---------------------------------------
-# Participación
-# ---------------------------------------
+# -------------------------
+# Participación (intermedia entre Persona y Actividad)
+# -------------------------
 class ParticipacionSerializer(serializers.ModelSerializer):
-    persona = PersonaSerializer(read_only=True)
-    persona_id = serializers.PrimaryKeyRelatedField(
-        queryset=Persona.objects.all(), source='persona',
-        write_only=True
-    )
-
-    actividad = ActividadSerializer(read_only=True)
-    actividad_id = serializers.PrimaryKeyRelatedField(
-        queryset=Actividad.objects.all(), source='actividad',
-        write_only=True
-    )
-
-    sedes = SedeSerializer(many=True, read_only=True)  # lectura
-    sedes_id = serializers.PrimaryKeyRelatedField(     # escritura
-        queryset=Sede.objects.all(),
-        many=True,
-        write_only=True
-    )
+    # Para incluir las sedes asociadas directamente, usando la tabla 'Lugar'
+    # Nota: Serializers anidados pueden ser más complejos para escritura (POST/PUT).
+    # En este caso, usaremos 'SedeSerializer' como ejemplo.
+    sedes = SedeSerializer(many=True, read_only=True) # Muestra las sedes
 
     class Meta:
         model = Participacion
-        fields = [
-            'id_participacion', 'persona', 'persona_id',
-            'actividad', 'actividad_id', 'fecha',
-            'sedes', 'sedes_id'
-        ]
-
-    def create(self, validated_data):
-        sedes_ids = validated_data.pop('sedes_id', [])
-        participacion = Participacion.objects.create(**validated_data)
-
-        # llenar tabla intermedia Lugar
-        for sede in sedes_ids:
-            Lugar.objects.create(participacion=participacion, sede=sede)
-
-        return participacion
+        fields = '__all__'
+        # Incluye: id_participacion, persona, actividad, fecha, anio, sedes
 
 
-# ---------------------------------------
+# -------------------------
 # Actividad Consolidada
-# ---------------------------------------
+# -------------------------
 class ActividadConsolidadaSerializer(serializers.ModelSerializer):
     class Meta:
         model = ActividadConsolidada
-        fields = '__all__'
+        fields = '__all__' # Incluye: id_actividad_consolidada, nombre
 
 
-# ---------------------------------------
+# -------------------------
 # Consolidación
-# ---------------------------------------
+# -------------------------
 class ConsolidacionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Consolidacion
-        fields = '__all__'
+        fields = '__all__' # Incluye: id_consolidacion, actividad, actividad_consolidada
 
 
-# ---------------------------------------
+# -------------------------
 # Tema y Tema Asociado
-# ---------------------------------------
+# -------------------------
 class TemaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Tema
-        fields = '__all__'
-
+        fields = '__all__' # Incluye: id_tema, nombre
 
 class TemaAsociadoSerializer(serializers.ModelSerializer):
     class Meta:
         model = TemaAsociado
-        fields = '__all__'
+        fields = '__all__' # Incluye: id_tema_asociado, actividad, tema
 
 
-# ---------------------------------------
+# -------------------------
 # Prioridad y Prioridad Asociada
-# ---------------------------------------
+# -------------------------
 class PrioridadSerializer(serializers.ModelSerializer):
     class Meta:
         model = Prioridad
-        fields = '__all__'
-
+        fields = '__all__' # Incluye: id_prioridad, nombre
 
 class PrioridadAsociadaSerializer(serializers.ModelSerializer):
     class Meta:
         model = PrioridadAsociada
-        fields = '__all__'
+        fields = '__all__' # Incluye: id_prioridad_asociada, actividad, prioridad
 
 
-# ---------------------------------------
+# -------------------------
 # Línea de Estrategia y Estrategia Asociada
-# ---------------------------------------
+# -------------------------
 class LineaEstrategiaSerializer(serializers.ModelSerializer):
     class Meta:
         model = LineaEstrategia
-        fields = '__all__'
-
+        fields = '__all__' # Incluye: id_linea_estrategia, nombre
 
 class EstrategiaAsociadaSerializer(serializers.ModelSerializer):
     class Meta:
         model = EstrategiaAsociada
-        fields = '__all__'
+        fields = '__all__' # Incluye: id_estrategia_asociada, actividad, linea_estrategia

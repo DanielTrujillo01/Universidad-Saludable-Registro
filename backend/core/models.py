@@ -100,7 +100,6 @@ class Indicador(models.Model):
 class Actividad(models.Model):
     id_actividad = models.AutoField(primary_key=True)
     nombre = models.CharField(max_length=200, null=False, blank=False)
-    anio = models.PositiveIntegerField(null=True, blank=False)
     indicador = models.ForeignKey(
         Indicador, on_delete=models.SET_NULL, null=True, blank=True
     )
@@ -129,7 +128,7 @@ class Participacion(models.Model):
     persona = models.ForeignKey(Persona, on_delete=models.CASCADE)
     actividad = models.ForeignKey(Actividad, on_delete=models.CASCADE)
     fecha = models.DateField(null=True, blank=False)
-
+    anio = models.PositiveIntegerField(null=True, blank=False)
     # Relación N-N hacia Sede mediante Lugar
     sedes = models.ManyToManyField(Sede, through="Lugar", blank=False)
 

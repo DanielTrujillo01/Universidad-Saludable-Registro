@@ -56,7 +56,25 @@ def convertir_fecha(fecha_str):
     print(f"⚠ Fecha inválida encontrada: {fecha_str} → se asigna NULL")
     return None
 
-
+# -------------------------
+# Nuevo helper para ints
+# -------------------------
+def parse_int(valor):
+    """Convierte valores tipo '1', '1.0', '3203661144.0' a int. Devuelve None si no es entero."""
+    if valor is None:
+        return None
+    s = str(valor).strip()
+    if s == "":
+        return None
+    s = s.replace(",", "").replace(" ", "")
+    try:
+        f = float(s)
+    except Exception:
+        return None
+    i = int(f)
+    if abs(f - i) < 1e-9:
+        return i
+    return None
 
 class Command(BaseCommand):
     help = "Importa datos desde un CSV y llena la base de datos."
@@ -128,13 +146,9 @@ class Command(BaseCommand):
             # ---------------------------------------------------------
             # Normalizar valores
             correo_normalizado = (correo or "").strip().lower() if correo else None
-            numero_documento_int = None
-            if numero_documento and str(numero_documento).strip() and str(numero_documento).isdigit():
-                numero_documento_int = int(numero_documento)
-            
-            telefono_int = None
-            if telefono and str(telefono).strip() and str(telefono).isdigit():
-                telefono_int = int(telefono)
+            numero_documento_int = parse_int(numero_documento)
+            telefono_int = parse_int(telefono)
+            semestre_int = parse_int(semestre)
 
             # ---- PASO 1: Búsqueda por documento O correo (si existen)
             persona_obj = None
@@ -146,9 +160,17 @@ class Command(BaseCommand):
                 persona_obj = Persona.objects.filter(correo__iexact=correo_normalizado).first()
 
             # ---- PASO 2: Si no encontró Y NO tiene documento ni correo, buscar por FUZZY MATCHING
-            # IMPORTANTE: Si tiene documento o correo pero no coincide con existentes → NO hacer fuzzy
             # Solo fuzzy si AMBOS están vacíos
-            if not persona_obj and not numero_documento_int and not correo_normalizado:
+            identificadores_fila = 0
+            if nombre_persona: identificadores_fila += 1
+            if tipo_documento: identificadores_fila += 1
+            if sexo: identificadores_fila += 1
+            if parse_int(edad) is not None: identificadores_fila += 1
+            if telefono_int: identificadores_fila += 1
+            if estamento: identificadores_fila += 1
+            if escuela_obj: identificadores_fila += 1
+
+            if not persona_obj and not numero_documento_int and not correo_normalizado and identificadores_fila >= 2:
                 # Sólo intentar fuzzy si la fila tiene al menos 2 campos identificadores
                 identificadores_fila = 0
                 if nombre_persona: identificadores_fila += 1
@@ -225,25 +247,22 @@ class Command(BaseCommand):
 
             # ---- PASO 3: Actualizar o crear Persona
             if persona_obj:
-                # 🔄 ACTUALIZAR EXISTENTE
+                # 🔄 ACTUALIZAR EXISTENTE (solo sobrescribe si CSV aporta valor)
                 if nombre_persona and (not persona_obj.nombre or persona_obj.nombre.strip() == ""):
                     persona_obj.nombre = nombre_persona
                 if tipo_documento and (not persona_obj.tipo_documento or persona_obj.tipo_documento.strip() == ""):
                     persona_obj.tipo_documento = tipo_documento
                 if sexo and (not persona_obj.sexo or persona_obj.sexo.strip() == ""):
                     persona_obj.sexo = sexo
-                if edad and str(edad).isdigit() and not persona_obj.edad:
-                    persona_obj.edad = int(edad)
+                if edad and parse_int(edad) is not None and not persona_obj.edad:
+                    persona_obj.edad = parse_int(edad)
                 if telefono_int and not persona_obj.telefono:
                     persona_obj.telefono = telefono_int
-                # Antes de asignar correo/verificar único: asegurarse que no existe en otra persona
+                # Antes de asignar correo/verificar único
                 if correo_normalizado and not persona_obj.correo:
                     conflicto = Persona.objects.filter(correo__iexact=correo_normalizado).exclude(pk=persona_obj.pk).exists()
                     if not conflicto:
                         persona_obj.correo = correo_normalizado
-                    else:
-                        # Si el correo ya está en otra fila, evitar asignarlo aquí (log opcional)
-                        pass
                 if estamento and (not persona_obj.estamento or persona_obj.estamento.strip() == ""):
                     persona_obj.estamento = estamento
                 if escuela_obj and not persona_obj.escuela:
@@ -253,23 +272,22 @@ class Command(BaseCommand):
                     conflicto_doc = Persona.objects.filter(numero_documento=numero_documento_int).exclude(pk=persona_obj.pk).exists()
                     if not conflicto_doc:
                         persona_obj.numero_documento = numero_documento_int
-                    else:
-                        # no asignar para evitar duplicados; log opcional
-                        pass
 
                 persona_obj.save()
             else:
                 # 🆕 CREAR NUEVO (solo con valores que existen)
-                crear_datos = {
-                    "nombre": nombre_persona or "SIN NOMBRE",
-                }
-                # Agregar campos solo si tienen valor
+                crear_datos = {}
+                if nombre_persona:
+                    crear_datos["nombre"] = nombre_persona
+                else:
+                    crear_datos["nombre"] = "SIN NOMBRE"
+
                 if tipo_documento:
                     crear_datos["tipo_documento"] = tipo_documento
                 if sexo:
                     crear_datos["sexo"] = sexo
-                if edad and str(edad).isdigit():
-                    crear_datos["edad"] = int(edad)
+                if edad and parse_int(edad) is not None:
+                    crear_datos["edad"] = parse_int(edad)
                 if telefono_int:
                     crear_datos["telefono"] = telefono_int
                 if correo_normalizado:
@@ -281,12 +299,39 @@ class Command(BaseCommand):
                 if numero_documento_int:
                     crear_datos["numero_documento"] = numero_documento_int
 
-                # Determinar si es Estudiante o Persona normal
-                if semestre and str(semestre).isdigit():
-                    crear_datos["semestre"] = int(semestre)
+                # Determinar si es Estudiante o Persona normal al crear
+                if semestre_int is not None:
+                    crear_datos["semestre"] = semestre_int
                     persona_obj = Estudiante.objects.create(**crear_datos)
                 else:
                     persona_obj = Persona.objects.create(**crear_datos)
+
+            # -----------------------------
+            # Asegurar existencia de Estudiante si corresponde
+            # -----------------------------
+            # Si la fila trae semestre y la persona ya existía como Persona, crear/actualizar Estudiante
+            if semestre_int is not None:
+                try:
+                    est_obj, created = Estudiante.objects.get_or_create(
+                        id_persona=persona_obj.id_persona,
+                        defaults={"semestre": semestre_int}
+                    )
+                    if not created and est_obj.semestre != semestre_int:
+                        est_obj.semestre = semestre_int
+                        est_obj.save()
+                except Exception:
+                    # si el modelo usa otra relación, intentar por pk (ajusta según tu modelo)
+                    try:
+                        est_obj, created = Estudiante.objects.get_or_create(
+                            persona_ptr_id=persona_obj.pk,
+                            defaults={"semestre": semestre_int}
+                        )
+                        if not created and est_obj.semestre != semestre_int:
+                            est_obj.semestre = semestre_int
+                            est_obj.save()
+                    except Exception:
+                        # log mínimo para depuración
+                        self.stdout.write(self.style.WARNING(f"No se pudo crear/actualizar Estudiante para persona {persona_obj.pk} (fila {i+1})"))
 
             # ---------------------------------------------------------
             # ✅ 4. Indicador
@@ -302,7 +347,6 @@ class Command(BaseCommand):
             # ---------------------------------------------------------
             actividad_obj, _ = Actividad.objects.get_or_create(
                 nombre=actividad_nombre,
-                anio=int(float(anio)) if anio else None,
                 defaults={
                     "indicador": indicador_obj
                 }
@@ -344,6 +388,7 @@ class Command(BaseCommand):
             # ---------------------------------------------------------
             part_obj, _ = Participacion.objects.get_or_create(
                 persona=persona_obj,
+                anio=int(float(anio)) if anio else None,
                 actividad=actividad_obj,
                 fecha=fecha
             )

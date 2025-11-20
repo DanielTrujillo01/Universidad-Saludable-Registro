@@ -1,4 +1,6 @@
 from django.shortcuts import render
+from rest_framework.decorators import action
+from rest_framework.response import Response
 from rest_framework import viewsets
 from .models import (
     Sede, LineaProyecto, Facultad, Escuela, Persona, Estudiante,
@@ -43,6 +45,45 @@ class EscuelaViewSet(viewsets.ModelViewSet):
 class PersonaViewSet(viewsets.ModelViewSet):
     queryset = Persona.objects.all()
     serializer_class = PersonaSerializer
+
+    # ----------------------------------------------------------------------
+    # FUNCIÓN DE CONSULTA: Personas que asistieron a una Actividad (por Nombre)
+    # ----------------------------------------------------------------------
+    @action(detail=False, methods=['get'], url_path='asistentes-por-nombre-actividad')
+    def asistentes_por_nombre_actividad(self, request):
+        """
+        Obtiene una lista de Personas que participaron en una Actividad
+        específica, filtrando por el nombre de la actividad.
+        Ej: /api/personas/asistentes-por-nombre-actividad/?nombre_actividad=Taller%20de%20Liderazgo
+        """
+        # 1. Obtener el nombre de la actividad del parámetro de consulta (query parameter)
+        nombre_actividad = request.query_params.get('nombre_actividad')
+
+        if not nombre_actividad:
+            return Response(
+                {"error": "Debe proporcionar el parámetro 'nombre_actividad'."},
+                status=400 # Bad Request
+            )
+
+        # 2. Lógica del Modelo (Consulta con Django ORM)
+        # Usamos icontains para buscar el nombre de la actividad de forma insensible a mayúsculas
+        # y que funcione incluso con nombres parciales (puedes cambiarlo a exact si deseas coincidencia exacta).
+        personas = Persona.objects.filter(
+            participacion__actividad__nombre__icontains=nombre_actividad
+        ).distinct() # Usamos distinct() para asegurar que cada Persona aparezca solo una vez.
+
+        # Verificar si se encontraron resultados
+        if not personas.exists():
+             return Response(
+                {"mensaje": f"No se encontraron personas que hayan asistido a la actividad que contenga el nombre: '{nombre_actividad}'."},
+                status=200 # OK, pero la lista está vacía
+            )
+
+        # 3. Vista (Serialización)
+        serializer = self.get_serializer(personas, many=True)
+
+        # 4. Retorno de la Respuesta
+        return Response(serializer.data)
 
 
 class EstudianteViewSet(viewsets.ModelViewSet):
