@@ -125,20 +125,37 @@ class Command(BaseCommand):
             prioridad_nombre = limpiar(row.get("Prioridad"))
             estrategia_nombre = limpiar(row.get("Linea de estrategia"))
 
+            # Campos "Original" (mantener copia de los valores originales)
+            actividad_nombre_original = limpiar(row.get("Actividad Original"))
+            actividad_consolidada_nombre_original = limpiar(row.get("Actividad consolidada Original"))
+            linea_proyecto_nombre_original = limpiar(row.get("Linea del Proyecto Original"))
+            indicador_nombre_original = limpiar(row.get("Indicador Original"))
+            sede_nombre_original = limpiar(row.get("Sede Original"))
+            estamento_original = limpiar(row.get("Estamento Original"))
+            facultad_nombre_original = limpiar(row.get("Facultad/Instituto/Área Original"))
+            escuela_nombre_original = limpiar(row.get("Escuela/Programa Académico Original"))
+            nombre_persona_original = limpiar(row.get("Nombre Original"))
+            tipo_documento_original = limpiar(row.get("Tipo de Documento Original"))
+            tema_nombre_original = limpiar(row.get("Tema Original"))
+            prioridad_nombre_original = limpiar(row.get("Prioridad Original"))
+            estrategia_nombre_original = limpiar(row.get("Linea de estrategia Original"))
+
             # ---------------------------------------------------------
             # ✅ 2. Facultad y Escuela
             # ---------------------------------------------------------
             facultad_obj = None
             if facultad_nombre:
                 facultad_obj, _ = Facultad.objects.get_or_create(
-                    nombre=facultad_nombre
+                    nombre=facultad_nombre,
+                    defaults={"nombre_original": facultad_nombre_original}
                 )
 
             escuela_obj = None
             if escuela_nombre:
                 escuela_obj, _ = Escuela.objects.get_or_create(
                     nombre=escuela_nombre,
-                    facultad=facultad_obj
+                    facultad=facultad_obj,
+                    defaults={"nombre_original": escuela_nombre_original}
                 )
 
             # ---------------------------------------------------------
@@ -250,8 +267,13 @@ class Command(BaseCommand):
                 # 🔄 ACTUALIZAR EXISTENTE (solo sobrescribe si CSV aporta valor)
                 if nombre_persona and (not persona_obj.nombre or persona_obj.nombre.strip() == ""):
                     persona_obj.nombre = nombre_persona
+                # mantener nombre_original si CSV aporta valor original
+                if nombre_persona_original and (not persona_obj.nombre_original or persona_obj.nombre_original.strip() == ""):
+                    persona_obj.nombre_original = nombre_persona_original
                 if tipo_documento and (not persona_obj.tipo_documento or persona_obj.tipo_documento.strip() == ""):
                     persona_obj.tipo_documento = tipo_documento
+                if tipo_documento_original and (not persona_obj.tipo_documento_original or persona_obj.tipo_documento_original.strip() == ""):
+                    persona_obj.tipo_documento_original = tipo_documento_original
                 if sexo and (not persona_obj.sexo or persona_obj.sexo.strip() == ""):
                     persona_obj.sexo = sexo
                 if edad and parse_int(edad) is not None and not persona_obj.edad:
@@ -265,6 +287,12 @@ class Command(BaseCommand):
                         persona_obj.correo = correo_normalizado
                 if estamento and (not persona_obj.estamento or persona_obj.estamento.strip() == ""):
                     persona_obj.estamento = estamento
+                # guardar estamento original si viene
+                if estamento_original and (not getattr(persona_obj, "estamento_original", None)):
+                    try:
+                        persona_obj.estamento_original = estamento_original
+                    except Exception:
+                        pass
                 if escuela_obj and not persona_obj.escuela:
                     persona_obj.escuela = escuela_obj
                 # Igual para número de documento: sólo asignar si no existe en otra persona
@@ -281,9 +309,14 @@ class Command(BaseCommand):
                     crear_datos["nombre"] = nombre_persona
                 else:
                     crear_datos["nombre"] = "SIN NOMBRE"
+                # siempre intentar conservar el original si existe
+                if nombre_persona_original:
+                    crear_datos["nombre_original"] = nombre_persona_original
 
                 if tipo_documento:
                     crear_datos["tipo_documento"] = tipo_documento
+                if tipo_documento_original:
+                    crear_datos["tipo_documento_original"] = tipo_documento_original
                 if sexo:
                     crear_datos["sexo"] = sexo
                 if edad and parse_int(edad) is not None:
@@ -339,25 +372,31 @@ class Command(BaseCommand):
             indicador_obj = None
             if indicador_nombre:
                 indicador_obj, _ = Indicador.objects.get_or_create(
-                    nombre=indicador_nombre
+                    nombre=indicador_nombre,
+                    defaults={"nombre_original": indicador_nombre_original}
                 )
 
             # ---------------------------------------------------------
             # ✅ 5. Actividad
             # ---------------------------------------------------------
+            actividad_defaults = {"indicador": indicador_obj}
+            if actividad_nombre_original:
+                actividad_defaults["nombre_original"] = actividad_nombre_original
             actividad_obj, _ = Actividad.objects.get_or_create(
                 nombre=actividad_nombre,
-                defaults={
-                    "indicador": indicador_obj
-                }
+                defaults=actividad_defaults
             )
 
             # ---------------------------------------------------------
-            # ✅ 6. Actividad consolidada y su relación
+            # ✅ 6. Actividad consolidada and su relación
             # ---------------------------------------------------------
             if actividad_consolidada_nombre:
+                act_con_defaults = {}
+                if actividad_consolidada_nombre_original:
+                    act_con_defaults["nombre_original"] = actividad_consolidada_nombre_original
                 act_con_obj, _ = ActividadConsolidada.objects.get_or_create(
-                    nombre=actividad_consolidada_nombre
+                    nombre=actividad_consolidada_nombre,
+                    defaults=act_con_defaults
                 )
                 Consolidacion.objects.get_or_create(
                     actividad=actividad_obj,
@@ -368,8 +407,12 @@ class Command(BaseCommand):
             # ✅ 7. Línea de proyecto
             # ---------------------------------------------------------
             if linea_proyecto_nombre:
+                linea_proj_defaults = {}
+                if linea_proyecto_nombre_original:
+                    linea_proj_defaults["nombre_original"] = linea_proyecto_nombre_original
                 linea_proj_obj, _ = LineaProyecto.objects.get_or_create(
-                    nombre=linea_proyecto_nombre
+                    nombre=linea_proyecto_nombre,
+                    defaults=linea_proj_defaults
                 )
                 AsociacionProyecto.objects.get_or_create(
                     actividad=actividad_obj,
@@ -416,7 +459,13 @@ class Command(BaseCommand):
             # ✅ 12. Prioridad
             # ---------------------------------------------------------
             if prioridad_nombre:
-                prioridad_obj, _ = Prioridad.objects.get_or_create(nombre=prioridad_nombre)
+                prioridad_defaults = {}
+                if prioridad_nombre_original:
+                    prioridad_defaults["nombre_original"] = prioridad_nombre_original
+                prioridad_obj, _ = Prioridad.objects.get_or_create(
+                    nombre=prioridad_nombre,
+                    defaults=prioridad_defaults
+                )
                 PrioridadAsociada.objects.get_or_create(
                     actividad=actividad_obj,
                     prioridad=prioridad_obj
@@ -426,7 +475,13 @@ class Command(BaseCommand):
             # ✅ 13. Línea de estrategia
             # ---------------------------------------------------------
             if estrategia_nombre:
-                est_obj, _ = LineaEstrategia.objects.get_or_create(nombre=estrategia_nombre)
+                est_defaults = {}
+                if estrategia_nombre_original:
+                    est_defaults["nombre_original"] = estrategia_nombre_original
+                est_obj, _ = LineaEstrategia.objects.get_or_create(
+                    nombre=estrategia_nombre,
+                    defaults=est_defaults
+                )
                 EstrategiaAsociada.objects.get_or_create(
                     actividad=actividad_obj,
                     linea_estrategia=est_obj

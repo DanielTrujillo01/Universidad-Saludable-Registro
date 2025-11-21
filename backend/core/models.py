@@ -8,6 +8,7 @@ from django.core.validators import MinValueValidator, MaxValueValidator
 class Sede(models.Model):
     id_sede = models.AutoField(primary_key=True)
     nombre = models.CharField(max_length=200)
+    nombre_original = models.CharField(max_length=300, null=True, blank=True)
 
     def __str__(self):
         return self.nombre
@@ -19,6 +20,7 @@ class Sede(models.Model):
 class LineaProyecto(models.Model):
     id_linea_proyecto = models.AutoField(primary_key=True)
     nombre = models.CharField(max_length=200)
+    nombre_original = models.CharField(max_length=300, null=True, blank=True)
 
     def __str__(self):
         return self.nombre
@@ -30,6 +32,7 @@ class LineaProyecto(models.Model):
 class Facultad(models.Model):
     id_facultad = models.AutoField(primary_key=True)
     nombre = models.CharField(max_length=200)
+    nombre_original = models.CharField(max_length=300, null=True, blank=True)
 
     def __str__(self):
         return self.nombre
@@ -38,6 +41,7 @@ class Facultad(models.Model):
 class Escuela(models.Model):
     id_escuela = models.AutoField(primary_key=True)
     nombre = models.CharField(max_length=200)
+    nombre_original = models.CharField(max_length=300, null=True, blank=True)
     facultad = models.ForeignKey(
         Facultad, on_delete=models.CASCADE, null=True, blank=True
     )
@@ -51,8 +55,15 @@ class Escuela(models.Model):
 # -------------------------
 class Persona(models.Model):
     id_persona = models.AutoField(primary_key=True)
+
+    # Valores normalizados
     nombre = models.CharField(max_length=200, null=True, blank=False)
     tipo_documento = models.CharField(max_length=100, null=True, blank=True)
+
+    # Valores originales
+    nombre_original = models.CharField(max_length=300, null=True, blank=True)
+    tipo_documento_original = models.CharField(max_length=150, null=True, blank=True)
+
     numero_documento = models.PositiveBigIntegerField(
         validators=[MinValueValidator(100000), MaxValueValidator(9999999999)],
         unique=True,
@@ -60,13 +71,13 @@ class Persona(models.Model):
         blank=True,
     )
     edad = models.PositiveIntegerField(null=True, blank=True)
-    correo = models.EmailField(null=True, blank=True,unique=True)
+    correo = models.EmailField(null=True, blank=True, unique=True)
     sexo = models.CharField(max_length=20, null=True, blank=False)
     telefono = models.BigIntegerField(
         validators=[MinValueValidator(1000000000), MaxValueValidator(9999999999)],
         null=True,
         blank=True
-    )   
+    )
     estamento = models.CharField(max_length=50, null=True, blank=False)
     escuela = models.ForeignKey(
         Escuela, on_delete=models.SET_NULL, null=True, blank=True
@@ -89,6 +100,7 @@ class Estudiante(Persona):
 class Indicador(models.Model):
     id_indicador = models.AutoField(primary_key=True)
     nombre = models.CharField(max_length=200)
+    nombre_original = models.CharField(max_length=300, null=True, blank=True)
 
     def __str__(self):
         return self.nombre
@@ -100,6 +112,8 @@ class Indicador(models.Model):
 class Actividad(models.Model):
     id_actividad = models.AutoField(primary_key=True)
     nombre = models.CharField(max_length=200, null=False, blank=False)
+    nombre_original = models.CharField(max_length=300, null=True, blank=True)
+
     indicador = models.ForeignKey(
         Indicador, on_delete=models.SET_NULL, null=True, blank=True
     )
@@ -129,7 +143,7 @@ class Participacion(models.Model):
     actividad = models.ForeignKey(Actividad, on_delete=models.CASCADE)
     fecha = models.DateField(null=True, blank=False)
     anio = models.PositiveIntegerField(null=True, blank=False)
-    # Relación N-N hacia Sede mediante Lugar
+
     sedes = models.ManyToManyField(Sede, through="Lugar", blank=False)
 
     def __str__(self):
@@ -154,14 +168,12 @@ class Lugar(models.Model):
 class ActividadConsolidada(models.Model):
     id_actividad_consolidada = models.AutoField(primary_key=True)
     nombre = models.CharField(max_length=200)
+    nombre_original = models.CharField(max_length=300, null=True, blank=True)
 
     def __str__(self):
         return self.nombre
 
 
-# -------------------------
-# Consolidación
-# -------------------------
 class Consolidacion(models.Model):
     id_consolidacion = models.AutoField(primary_key=True)
     actividad = models.ForeignKey(Actividad, on_delete=models.CASCADE)
@@ -199,6 +211,7 @@ class TemaAsociado(models.Model):
 class Prioridad(models.Model):
     id_prioridad = models.AutoField(primary_key=True)
     nombre = models.CharField(max_length=200)
+    nombre_original = models.CharField(max_length=300, null=True, blank=True)
 
     def __str__(self):
         return self.nombre
@@ -219,6 +232,7 @@ class PrioridadAsociada(models.Model):
 class LineaEstrategia(models.Model):
     id_linea_estrategia = models.AutoField(primary_key=True)
     nombre = models.CharField(max_length=200)
+    nombre_original = models.CharField(max_length=300, null=True, blank=True)
 
     def __str__(self):
         return self.nombre
