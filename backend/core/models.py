@@ -7,7 +7,7 @@ from django.core.validators import MinValueValidator, MaxValueValidator
 # -------------------------
 class Sede(models.Model):
     id_sede = models.AutoField(primary_key=True)
-    nombre = models.CharField(max_length=200)
+    nombre = models.CharField(max_length=200,unique=True)
     nombre_original = models.CharField(max_length=300, null=True, blank=True)
 
     def __str__(self):
@@ -19,7 +19,7 @@ class Sede(models.Model):
 # -------------------------
 class LineaProyecto(models.Model):
     id_linea_proyecto = models.AutoField(primary_key=True)
-    nombre = models.CharField(max_length=200)
+    nombre = models.CharField(max_length=200,)
     nombre_original = models.CharField(max_length=300, null=True, blank=True)
 
     def __str__(self):
@@ -137,15 +137,15 @@ class AsociacionProyecto(models.Model):
 # -------------------------
 # Participación (intermedia entre Persona y Actividad)
 # -------------------------
-class Participacion(models.Model):
+class Participacion(models.Model):  
     id_participacion = models.AutoField(primary_key=True)
     persona = models.ForeignKey(Persona, on_delete=models.CASCADE)
     actividad = models.ForeignKey(Actividad, on_delete=models.CASCADE)
     fecha = models.DateField(null=True, blank=False)
     anio = models.PositiveIntegerField(null=True, blank=False)
 
-    sedes = models.ManyToManyField(Sede, through="Lugar", blank=False)
-
+    #sedes = models.ManyToManyField(Sede, through="Lugar", blank=False)
+    sede = models.ForeignKey(Sede, on_delete=models.CASCADE, null=False, blank=True)
     def __str__(self):
         return f"Participación {self.id_participacion}"
 

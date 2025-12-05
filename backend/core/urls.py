@@ -1,5 +1,12 @@
+from django.urls import path, include # <--- 1. NECESITAS IMPORTAR ESTO
 from rest_framework.routers import DefaultRouter
+# 1. IMPORTAR LAS VISTAS DE JWT
+from rest_framework_simplejwt.views import (
+    TokenObtainPairView,
+    TokenRefreshView,
+)
 from .views import (
+    DashboardStatsView, # <--- 2. IMPORTA TU NUEVA VISTA AQUÍ
     SedeViewSet, LineaProyectoViewSet, FacultadViewSet, EscuelaViewSet,
     PersonaViewSet, EstudianteViewSet, IndicadorViewSet, ActividadViewSet,
     AsociacionProyectoViewSet, ParticipacionViewSet, LugarViewSet,
@@ -10,6 +17,7 @@ from .views import (
 
 router = DefaultRouter()
 
+# ... tus registros existentes ...
 router.register(r'sedes', SedeViewSet)
 router.register(r'lineas-proyecto', LineaProyectoViewSet)
 router.register(r'facultades', FacultadViewSet)
@@ -30,4 +38,16 @@ router.register(r'prioridades-asociadas', PrioridadAsociadaViewSet)
 router.register(r'lineas-estrategia', LineaEstrategiaViewSet)
 router.register(r'estrategias-asociadas', EstrategiaAsociadaViewSet)
 
-urlpatterns = router.urls
+urlpatterns = [
+    # En esta ruta envías {username, password} y recibes {access, refresh}
+    path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    
+    # En esta ruta envías {refresh} y recibes un nuevo {access}
+    path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+
+    # Ruta manual para el Dashboard (Privada)
+    path('dashboard-stats/', DashboardStatsView.as_view(), name='dashboard-stats'),
+    
+    # Rutas automáticas del Router (CRUDs)
+    path('', include(router.urls)),
+]

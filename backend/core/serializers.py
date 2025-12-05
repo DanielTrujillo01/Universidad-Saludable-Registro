@@ -100,11 +100,6 @@ class LugarSerializer(serializers.ModelSerializer):
 # Participación (intermedia entre Persona y Actividad)
 # -------------------------
 class ParticipacionSerializer(serializers.ModelSerializer):
-    # Para incluir las sedes asociadas directamente, usando la tabla 'Lugar'
-    # Nota: Serializers anidados pueden ser más complejos para escritura (POST/PUT).
-    # En este caso, usaremos 'SedeSerializer' como ejemplo.
-    sedes = SedeSerializer(many=True, read_only=True) # Muestra las sedes
-
     class Meta:
         model = Participacion
         fields = '__all__'
