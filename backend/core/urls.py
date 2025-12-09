@@ -6,7 +6,7 @@ from rest_framework_simplejwt.views import (
     TokenRefreshView,
 )
 from .views import (
-    DashboardStatsView, # <--- 2. IMPORTA TU NUEVA VISTA AQUÍ
+    DashboardViewSet, # <--- 2. IMPORTA TU NUEVA VISTA AQUÍ
     SedeViewSet, LineaProyectoViewSet, FacultadViewSet, EscuelaViewSet,
     PersonaViewSet, EstudianteViewSet, IndicadorViewSet, ActividadViewSet,
     AsociacionProyectoViewSet, ParticipacionViewSet, LugarViewSet,
@@ -37,6 +37,7 @@ router.register(r'prioridades', PrioridadViewSet)
 router.register(r'prioridades-asociadas', PrioridadAsociadaViewSet)
 router.register(r'lineas-estrategia', LineaEstrategiaViewSet)
 router.register(r'estrategias-asociadas', EstrategiaAsociadaViewSet)
+router.register(r'dashboard-stats', DashboardViewSet, basename='dashboard-stats')
 
 urlpatterns = [
     # En esta ruta envías {username, password} y recibes {access, refresh}
@@ -44,9 +45,6 @@ urlpatterns = [
     
     # En esta ruta envías {refresh} y recibes un nuevo {access}
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
-
-    # Ruta manual para el Dashboard (Privada)
-    path('dashboard-stats/', DashboardStatsView.as_view(), name='dashboard-stats'),
     
     # Rutas automáticas del Router (CRUDs)
     path('', include(router.urls)),

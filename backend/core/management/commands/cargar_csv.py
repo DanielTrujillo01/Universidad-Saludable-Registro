@@ -5,7 +5,7 @@ from django.db.models import Q
 import re
 from core.models import (
     Persona, Estudiante, Escuela, Facultad, Actividad, Indicador,
-    Participacion, Lugar, Sede, Tema, TemaAsociado, Prioridad,
+    Participacion, Sede, Tema, TemaAsociado, Prioridad, # <--- Lugar eliminado
     PrioridadAsociada, LineaEstrategia, EstrategiaAsociada,
     LineaProyecto, AsociacionProyecto, ActividadConsolidada,
     Consolidacion
@@ -427,26 +427,20 @@ class Command(BaseCommand):
                 sede_obj, _ = Sede.objects.get_or_create(nombre=sede_nombre)
 
             # ---------------------------------------------------------
-            # ✅ 9. Participación
+            # ✅ 9. Participación (Ahora incluye la Sede directamente)
             # ---------------------------------------------------------
+            # Ajuste: Se agrega 'sede=sede_obj' dentro de los argumentos
             part_obj, _ = Participacion.objects.get_or_create(
                 persona=persona_obj,
                 anio=int(float(anio)) if anio else None,
                 actividad=actividad_obj,
-                fecha=fecha
+                fecha=fecha,
+                sede=sede_obj  # <--- NUEVO CAMPO DIRECTO
             )
 
-            # ---------------------------------------------------------
-            # ✅ 10. Lugar (Participación ↔ Sede)
-            # ---------------------------------------------------------
-            if sede_obj:
-                Lugar.objects.get_or_create(
-                    participacion=part_obj,
-                    sede=sede_obj
-                )
 
             # ---------------------------------------------------------
-            # ✅ 11. Tema
+            # ✅ 10. Tema
             # ---------------------------------------------------------
             if tema_nombre:
                 tema_obj, _ = Tema.objects.get_or_create(nombre=tema_nombre)
@@ -456,7 +450,7 @@ class Command(BaseCommand):
                 )
 
             # ---------------------------------------------------------
-            # ✅ 12. Prioridad
+            # ✅ 11. Prioridad
             # ---------------------------------------------------------
             if prioridad_nombre:
                 prioridad_defaults = {}
@@ -472,7 +466,7 @@ class Command(BaseCommand):
                 )
 
             # ---------------------------------------------------------
-            # ✅ 13. Línea de estrategia
+            # ✅ 12. Línea de estrategia
             # ---------------------------------------------------------
             if estrategia_nombre:
                 est_defaults = {}

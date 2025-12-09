@@ -196,7 +196,7 @@ class Tema(models.Model):
         return self.nombre
 
 
-class TemaAsociado(models.Model):
+class TemaAsociado(models.Model):  
     id_tema_asociado = models.AutoField(primary_key=True)
     actividad = models.ForeignKey(Actividad, on_delete=models.CASCADE)
     tema = models.ForeignKey(Tema, on_delete=models.CASCADE)
