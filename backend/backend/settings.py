@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 from pathlib import Path
 import os
 from dotenv import load_dotenv
+from datetime import timedelta
 
 load_dotenv()
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -133,6 +134,18 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+SIMPLE_JWT = {
+    # El Access Token es efímero (seguridad)
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=1), 
+    
+    # El Refresh Token dura lo que quieras que dure la sesión "recordada"
+    # Si el usuario vuelve mañana, esto determinará si sigue logueado
+    'REFRESH_TOKEN_LIFETIME': timedelta(minutes=5), 
+    
+    'ROTATE_REFRESH_TOKENS': True,  # Opcional: Para mayor seguridad
+    'BLACKLIST_AFTER_ROTATION': True,
+}
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (

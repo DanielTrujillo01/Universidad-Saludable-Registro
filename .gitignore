@@ -1,6 +1,4 @@
 # Entorno virtual
-venv/
-env/
 
 # Cache
 __pycache__/

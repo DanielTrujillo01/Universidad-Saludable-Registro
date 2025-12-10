@@ -123,6 +123,26 @@ class Actividad(models.Model):
 
 
 # -------------------------
+# Tema y Tema Asociado
+# -------------------------
+class Tema(models.Model):
+    id_tema = models.AutoField(primary_key=True)
+    nombre = models.CharField(max_length=200)
+
+    def __str__(self):
+        return self.nombre
+
+
+class TemaAsociado(models.Model):  
+    id_tema_asociado = models.AutoField(primary_key=True)
+    actividad = models.ForeignKey(Actividad, on_delete=models.CASCADE)
+    tema = models.ForeignKey(Tema, on_delete=models.CASCADE)
+
+    def __str__(self):
+        return f"TemaAsociado {self.id_tema_asociado}"
+    
+
+# -------------------------
 # Asociación Proyecto
 # -------------------------
 class AsociacionProyecto(models.Model):
@@ -141,13 +161,16 @@ class Participacion(models.Model):
     id_participacion = models.AutoField(primary_key=True)
     persona = models.ForeignKey(Persona, on_delete=models.CASCADE)
     actividad = models.ForeignKey(Actividad, on_delete=models.CASCADE)
+    
+    # NUEVO CAMPO: Relaciona la persona con el taller/tema específico
+    tema = models.ForeignKey(Tema, on_delete=models.SET_NULL, null=True, blank=True)
+    
     fecha = models.DateField(null=True, blank=False)
     anio = models.PositiveIntegerField(null=True, blank=False)
-
-    #sedes = models.ManyToManyField(Sede, through="Lugar", blank=False)
     sede = models.ForeignKey(Sede, on_delete=models.CASCADE, null=False, blank=True)
+
     def __str__(self):
-        return f"Participación {self.id_participacion}"
+        return f"Participación {self.id_participacion} - {self.persona.nombre}"
 
 
 # -------------------------
@@ -183,26 +206,6 @@ class Consolidacion(models.Model):
 
     def __str__(self):
         return f"Consolidación {self.id_consolidacion}"
-
-
-# -------------------------
-# Tema y Tema Asociado
-# -------------------------
-class Tema(models.Model):
-    id_tema = models.AutoField(primary_key=True)
-    nombre = models.CharField(max_length=200)
-
-    def __str__(self):
-        return self.nombre
-
-
-class TemaAsociado(models.Model):  
-    id_tema_asociado = models.AutoField(primary_key=True)
-    actividad = models.ForeignKey(Actividad, on_delete=models.CASCADE)
-    tema = models.ForeignKey(Tema, on_delete=models.CASCADE)
-
-    def __str__(self):
-        return f"TemaAsociado {self.id_tema_asociado}"
 
 
 # -------------------------
