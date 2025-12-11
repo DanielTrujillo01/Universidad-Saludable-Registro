@@ -93,12 +93,12 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 
 # 4. BASE DE DATOS (Supabase)
 # Usamos dj_database_url para parsear la URL completa que da Supabase
+# settings.py
 DATABASES = {
     'default': dj_database_url.config(
-        # Busca automáticamente la variable DATABASE_URL
-        default='sqlite:///db.sqlite3', # Fallback local si no hay URL
-        conn_max_age=600,
-        ssl_require=True # Supabase requiere SSL
+        default='sqlite:///db.sqlite3',
+        conn_max_age=0,       # <--- CAMBIO 1: Desactiva la persistencia (el Pooler ya lo hace)
+        ssl_require=False     # <--- CAMBIO 2: Ponlo en False (dejaremos que la URL maneje el SSL)
     )
 }
 
