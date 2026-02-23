@@ -1,3 +1,0 @@
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass    PERMITIR SCRIPTS
-venv\Scripts\Activate.ps1                                     ACTIVAR EL AMBIENTE
-pip install djangorestframework-simplejwt
