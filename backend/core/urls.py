@@ -17,7 +17,7 @@ from .views import (
 
 router = DefaultRouter()
 
-# ... tus registros existentes ...
+
 router.register(r'sedes', SedeViewSet)
 router.register(r'lineas-proyecto', LineaProyectoViewSet)
 router.register(r'facultades', FacultadViewSet)

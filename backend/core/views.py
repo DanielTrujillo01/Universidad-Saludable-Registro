@@ -257,89 +257,473 @@ class DashboardViewSet(viewsets.ViewSet):
     # -------------------------------------------------------------------------
     @action(detail=False, methods=['get'])
     def por_sede(self, request):
-        # Agrupamos por Sede basándonos en la tabla Participación
-        qs = Participacion.objects.values('sede__nombre').annotate(
-            total_participantes=Count('id_participacion'),
-            total_actividades=Count('actividad', distinct=True)
-        ).order_by('-total_participantes')
+
+        start_date_raw = request.query_params.get('start_date')
+        end_date_raw = request.query_params.get('end_date')
+
+        qs = Participacion.objects.all()
+
+        if start_date_raw and end_date_raw:
+            start_date = parse_date(start_date_raw)
+            end_date = parse_date(end_date_raw)
+
+            if start_date and end_date:
+                qs = qs.filter(fecha__range=[start_date, end_date])
+            else:
+                return Response({"error": "Fechas inválidas"}, status=400)
+
+        # ----------------------------
+        # TOTAL SEDES
+        # ----------------------------
+        total_sedes = qs.values('sede').distinct().count()
+
+        # ----------------------------
+        # DATOS POR SEDE
+        # ----------------------------
+        agrupado = (
+            qs.values('sede','sede__nombre')
+            .annotate(
+                total_participantes=Count('id_participacion'),
+                total_actividades=Count('actividad', distinct=True)
+            )
+            .order_by('-total_participantes')
+        )
 
         data_list = []
-        for item in qs:
+
+        for item in agrupado:
             nombre = item['sede__nombre']
-            if not nombre: continue
+            if not nombre:
+                continue
 
             data_list.append({
+                "id": item['sede'],
                 "name": nombre,
                 "actividades": item['total_actividades'],
                 "participantes": item['total_participantes']
-                # Eliminado campo 'ubicacion'
+            })
+
+        # ----------------------------
+        # DISTRIBUCIÓN GLOBAL ESTAMENTO
+        # ----------------------------
+        total_personas = qs.values('persona').distinct().count()
+
+        estamentos = (
+            qs.values('persona__estamento')
+            .annotate(total=Count('persona', distinct=True))
+        )
+
+        estamento_data = []
+
+        for e in estamentos:
+            cantidad = e['total']
+            porcentaje = round((cantidad / total_personas) * 100, 2) if total_personas > 0 else 0
+
+            estamento_data.append({
+                "estamento": e['persona__estamento'] or "Sin estamento",
+                "cantidad": cantidad,
+                "porcentaje": porcentaje
             })
 
         return Response({
-            "total_sedes": len(data_list),
-            "data": data_list
+            "total_sedes": total_sedes,
+            "filtro_aplicado": bool(start_date_raw and end_date_raw),
+            "data": data_list,
+            "estamento_global": estamento_data
         })
     
+
+
     # -------------------------------------------------------------------------
-    # 8. CARGA ESPECÍFICA: ESCUELAS
+    # 8. DETALLE DINÁMICO: SEDE ESPECÍFICA
+    # URL:
+    # /api/dashboard-stats/detalle_sede/?id=ID_SEDE&fecha_inicio=2026-01-01&fecha_fin=2026-12-31
+    # -------------------------------------------------------------------------
+    @action(detail=False, methods=['get'])
+    def detalle_sede(self, request):
+
+        sede_id = request.query_params.get('id')
+        fecha_inicio = request.query_params.get('fecha_inicio')
+        fecha_fin = request.query_params.get('fecha_fin')
+
+        if not sede_id:
+            return Response({"error": "ID de sede requerido"}, status=400)
+
+        try:
+            sede = Sede.objects.get(pk=sede_id)
+
+            # 🔹 Filtro base por sede
+            participaciones = Participacion.objects.filter(sede=sede)
+
+            # 🔹 Filtro por rango de fechas (AHORA sobre Participacion)
+            if fecha_inicio and fecha_fin:
+                participaciones = participaciones.filter(
+                    fecha__range=[fecha_inicio, fecha_fin]
+                )
+
+            # ---------------------------------------
+            # 1️⃣ TOTAL PARTICIPANTES ÚNICOS
+            # ---------------------------------------
+            total_unicos = participaciones.values('persona').distinct().count()
+
+            # ---------------------------------------
+            # 2️⃣ TOTAL ACTIVIDADES
+            # ---------------------------------------
+            total_actividades = participaciones.values('actividad').distinct().count()
+
+            # ---------------------------------------
+            # 3️⃣ DISTRIBUCIÓN POR ESTAMENTO
+            # ---------------------------------------
+            conteo_por_estamento = (
+                participaciones
+                .values('persona__estamento')
+                .annotate(total=Count('persona', distinct=True))
+            )
+
+            estamentos_data = []
+
+            for item in conteo_por_estamento:
+                cantidad = item['total']
+                porcentaje = round((cantidad / total_unicos) * 100, 2) if total_unicos > 0 else 0
+
+                estamento_nombre = item['persona__estamento'] or "Sin Estamento"
+
+                estamentos_data.append({
+                    "estamento": estamento_nombre,
+                    "cantidad": cantidad,
+                    "porcentaje": porcentaje
+                })
+
+            return Response({
+                "id_sede": sede.id_sede,
+                "nombre": sede.nombre,
+                "total_actividades": total_actividades,
+                "total_participantes": total_unicos,
+                "estamento_participantes": estamentos_data
+            })
+
+        except Sede.DoesNotExist:
+            return Response({"error": "Sede no encontrada"}, status=404)
+    
+    # -------------------------------------------------------------------------
+    # 9. CARGA DINAMICA: ESCUELAS
     # URL: /api/dashboard-stats/por_escuela/
     # -------------------------------------------------------------------------
     @action(detail=False, methods=['get'])
     def por_escuela(self, request):
-        # Agrupamos Participaciones por la Escuela de la Persona
-        qs = Participacion.objects.values('persona__escuela__nombre').annotate(
-            total_participantes=Count('id_participacion'),
-            total_actividades=Count('actividad', distinct=True)
-        ).order_by('-total_participantes')
+
+        start_date_raw = request.query_params.get('start_date')
+        end_date_raw = request.query_params.get('end_date')
+
+        qs = Participacion.objects.all()
+
+        # 🔹 Filtro por rango
+        if start_date_raw and end_date_raw:
+            start_date = parse_date(start_date_raw)
+            end_date = parse_date(end_date_raw)
+
+            if not start_date or not end_date:
+                return Response({"error": "Fechas inválidas"}, status=400)
+
+            qs = qs.filter(fecha__range=[start_date, end_date])
+
+        # ----------------------------
+        # TOTAL ESCUELAS
+        # ----------------------------
+        total_escuelas = (
+            qs.values('persona__escuela')
+            .distinct()
+            .count()
+        )
+
+        # ----------------------------
+        # DATOS POR ESCUELA
+        # ----------------------------
+        agrupado = (
+            qs.values('persona__escuela','persona__escuela__nombre')
+            .annotate(
+                total_participantes=Count('id_participacion'),
+                total_actividades=Count('actividad', distinct=True)
+            )
+            .order_by('-total_participantes')
+        )
 
         data_list = []
-        for item in qs:
-            nombre = item['persona__escuela__nombre']
-            if not nombre: 
-                nombre = "Sin Escuela Asignada"
+
+        for item in agrupado:
+
+            nombre = item['persona__escuela__nombre'] or "Sin Escuela"
 
             data_list.append({
+                "id": item['persona__escuela'],
                 "name": nombre,
                 "actividades": item['total_actividades'],
-                "participantes": item['total_participantes'],
+                "participantes": item['total_participantes']
+            })
+
+        # ----------------------------
+        # DISTRIBUCIÓN GLOBAL ESTAMENTO
+        # ----------------------------
+        total_personas = qs.values('persona').distinct().count()
+
+        estamentos = (
+            qs.values('persona__estamento')
+            .annotate(total=Count('persona', distinct=True))
+        )
+
+        estamento_data = []
+
+        for e in estamentos:
+
+            cantidad = e['total']
+            porcentaje = round((cantidad / total_personas) * 100, 2) if total_personas > 0 else 0
+
+            estamento_data.append({
+                "estamento": e['persona__estamento'] or "Sin estamento",
+                "cantidad": cantidad,
+                "porcentaje": porcentaje
             })
 
         return Response({
-            "total_escuelas": len(data_list),
-            "data": data_list
+            "total_escuelas": total_escuelas,
+            "filtro_aplicado": bool(start_date_raw and end_date_raw),
+            "data": data_list,
+            "estamento_global": estamento_data
         })
     
+
+     # -------------------------------------------------------------------------
+    # 10. DETALLE DINÁMICO: ESCUELA ESPECÍFICA
+    # URL:
+    # /api/dashboard-stats/detalle_escuela/?id=ID_ESCUELA&fecha_inicio=2026-01-01&fecha_fin=2026-12-31
     # -------------------------------------------------------------------------
-    # 9. CARGA ESPECÍFICA: FACULTADES
+    @action(detail=False, methods=['get'])
+    def detalle_escuela(self, request):
+
+        escuela_id = request.query_params.get('id')
+        fecha_inicio = request.query_params.get('fecha_inicio')
+        fecha_fin = request.query_params.get('fecha_fin')
+
+        if not escuela_id:
+            return Response({"error": "ID de escuela requerido"}, status=400)
+
+        try:
+
+            escuela = Escuela.objects.get(pk=escuela_id)
+
+            participaciones = Participacion.objects.filter(
+                persona__escuela=escuela
+            )
+
+            # 🔹 filtro por fechas
+            if fecha_inicio and fecha_fin:
+                participaciones = participaciones.filter(
+                    fecha__range=[fecha_inicio, fecha_fin]
+                )
+
+            # ----------------------------
+            # TOTAL PARTICIPANTES ÚNICOS
+            # ----------------------------
+            total_unicos = participaciones.values('persona').distinct().count()
+
+            # ----------------------------
+            # TOTAL ACTIVIDADES
+            # ----------------------------
+            total_actividades = participaciones.values('actividad').distinct().count()
+
+            # ----------------------------
+            # DISTRIBUCIÓN ESTAMENTO
+            # ----------------------------
+            conteo = (
+                participaciones
+                .values('persona__estamento')
+                .annotate(total=Count('persona', distinct=True))
+            )
+
+            estamentos_data = []
+
+            for item in conteo:
+
+                cantidad = item['total']
+                porcentaje = round((cantidad / total_unicos) * 100, 2) if total_unicos > 0 else 0
+
+                estamentos_data.append({
+                    "estamento": item['persona__estamento'] or "Sin Estamento",
+                    "cantidad": cantidad,
+                    "porcentaje": porcentaje
+                })
+
+            return Response({
+                "id_escuela": escuela.id_escuela,
+                "nombre": escuela.nombre,
+                "total_actividades": total_actividades,
+                "total_participantes": total_unicos,
+                "estamento_participantes": estamentos_data
+            })
+
+        except Escuela.DoesNotExist:
+            return Response({"error": "Escuela no encontrada"}, status=404)
+    
+    # -------------------------------------------------------------------------
+    # 10. CARGA ESPECIFICA: FACULTADES
     # URL: /api/dashboard-stats/por_facultad/
     # -------------------------------------------------------------------------
     @action(detail=False, methods=['get'])
     def por_facultad(self, request):
-        # Agrupamos Participaciones por la Facultad de la Escuela de la Persona
-        qs = Participacion.objects.values('persona__escuela__facultad__nombre').annotate(
-            total_participantes=Count('id_participacion'),
-            total_actividades=Count('actividad', distinct=True)
-        ).order_by('-total_participantes')
+
+        start_date_raw = request.query_params.get('start_date')
+        end_date_raw = request.query_params.get('end_date')
+
+        qs = Participacion.objects.all()
+
+        # 🔹 Filtro por rango
+        if start_date_raw and end_date_raw:
+            start_date = parse_date(start_date_raw)
+            end_date = parse_date(end_date_raw)
+
+            if not start_date or not end_date:
+                return Response({"error": "Fechas inválidas"}, status=400)
+
+            qs = qs.filter(fecha__range=[start_date, end_date])
+
+        # ----------------------------
+        # TOTAL FACULTADES
+        # ----------------------------
+        total_facultades = (
+            qs.values('persona__escuela__facultad')
+            .distinct()
+            .count()
+        )
+
+        # ----------------------------
+        # DATOS POR FACULTAD
+        # ----------------------------
+        agrupado = (
+            qs.values('persona__escuela__facultad','persona__escuela__facultad__nombre')
+            .annotate(
+                total_participantes=Count('id_participacion'),
+                total_actividades=Count('actividad', distinct=True)
+            )
+            .order_by('-total_participantes')
+        )
 
         data_list = []
-        for item in qs:
-            nombre = item['persona__escuela__facultad__nombre']
-            if not nombre: 
-                nombre = "Sin Facultad Asignada"
+
+        for item in agrupado:
+
+            nombre = item['persona__escuela__facultad__nombre'] or "Sin Facultad"
 
             data_list.append({
+                "id": item['persona__escuela__facultad'],
                 "name": nombre,
                 "actividades": item['total_actividades'],
-                "participantes": item['total_participantes'],
+                "participantes": item['total_participantes']
+            })
+
+        # ----------------------------
+        # DISTRIBUCIÓN GLOBAL ESTAMENTO
+        # ----------------------------
+        total_personas = qs.values('persona').distinct().count()
+
+        estamentos = (
+            qs.values('persona__estamento')
+            .annotate(total=Count('persona', distinct=True))
+        )
+
+        estamento_data = []
+
+        for e in estamentos:
+
+            cantidad = e['total']
+            porcentaje = round((cantidad / total_personas) * 100, 2) if total_personas > 0 else 0
+
+            estamento_data.append({
+                "estamento": e['persona__estamento'] or "Sin estamento",
+                "cantidad": cantidad,
+                "porcentaje": porcentaje
             })
 
         return Response({
-            "total_facultades": len(data_list),
-            "data": data_list
+            "total_facultades": total_facultades,
+            "filtro_aplicado": bool(start_date_raw and end_date_raw),
+            "data": data_list,
+            "estamento_global": estamento_data
         })
     
     # -------------------------------------------------------------------------
-    # 10. DETALLE DINÁMICO: ACTIVIDAD ESPECÍFICA
+    # 11. DETALLE DINÁMICO: FACULTAD ESPECÍFICA
+    # URL:
+    # /api/dashboard-stats/detalle_facultad/?id=ID_FACULTAD&fecha_inicio=2026-01-01&fecha_fin=2026-12-31
+    # -------------------------------------------------------------------------
+    @action(detail=False, methods=['get'])
+    def detalle_facultad(self, request):
+
+        facultad_id = request.query_params.get('id')
+        fecha_inicio = request.query_params.get('fecha_inicio')
+        fecha_fin = request.query_params.get('fecha_fin')
+
+        if not facultad_id:
+            return Response({"error": "ID de facultad requerido"}, status=400)
+
+        try:
+
+            facultad = Facultad.objects.get(pk=facultad_id)
+
+            participaciones = Participacion.objects.filter(
+                persona__escuela__facultad=facultad
+            )
+
+            # 🔹 filtro por fechas
+            if fecha_inicio and fecha_fin:
+                participaciones = participaciones.filter(
+                    fecha__range=[fecha_inicio, fecha_fin]
+                )
+
+            # ----------------------------
+            # TOTAL PARTICIPANTES ÚNICOS
+            # ----------------------------
+            total_unicos = participaciones.values('persona').distinct().count()
+
+            # ----------------------------
+            # TOTAL ACTIVIDADES
+            # ----------------------------
+            total_actividades = participaciones.values('actividad').distinct().count()
+
+            # ----------------------------
+            # DISTRIBUCIÓN ESTAMENTO
+            # ----------------------------
+            conteo = (
+                participaciones
+                .values('persona__estamento')
+                .annotate(total=Count('persona', distinct=True))
+            )
+
+            estamentos_data = []
+
+            for item in conteo:
+
+                cantidad = item['total']
+                porcentaje = round((cantidad / total_unicos) * 100, 2) if total_unicos > 0 else 0
+
+                estamentos_data.append({
+                    "estamento": item['persona__estamento'] or "Sin Estamento",
+                    "cantidad": cantidad,
+                    "porcentaje": porcentaje
+                })
+
+            return Response({
+                "id_facultad": facultad.id_facultad,
+                "nombre": facultad.nombre,
+                "total_actividades": total_actividades,
+                "total_participantes": total_unicos,
+                "estamento_participantes": estamentos_data
+            })
+
+        except Facultad.DoesNotExist:
+            return Response({"error": "Facultad no encontrada"}, status=404)
+    
+    # -------------------------------------------------------------------------
+    # 11. DETALLE DINÁMICO: ACTIVIDAD ESPECÍFICA
     # URL: /api/dashboard-stats/detalle_actividad/?id=ID_DE_LA_ACTIVIDAD
     # -------------------------------------------------------------------------
     @action(detail=False, methods=['get'])
@@ -355,10 +739,32 @@ class DashboardViewSet(viewsets.ViewSet):
             # A. Personas únicas que asistieron al evento macro
             total_unicos = Participacion.objects.filter(actividad=actividad).values('persona').distinct().count()
 
+            conteo_por_estamento = (
+                Participacion.objects
+                .filter(actividad=actividad)
+                .values('persona__estamento')
+                .annotate(total=Count('persona', distinct=True))
+            )
+            estamentos_data = []
+
+            for item in conteo_por_estamento:
+                cantidad = item['total']
+                porcentaje = round((cantidad / total_unicos) * 100, 2) if total_unicos > 0 else 0
+
+                if item['persona__estamento'] is None:
+                    estamento_nombre = "Sin Estamento"
+                else:                    
+                    estamento_nombre = item['persona__estamento']  
+
+                estamentos_data.append({
+                    "estamento": estamento_nombre,
+                    "cantidad": cantidad,
+                    "porcentaje": porcentaje
+                })
             # B. Conteos granulares por taller (Tema)
             # Buscamos los temas que pertenecen a esta actividad
             temas_asociados = TemaAsociado.objects.filter(actividad=actividad).select_related('tema')
-            
+
             temas_data = []
             for ta in temas_asociados:
                 # Contamos cuántas personas registraron asistencia específica a este tema
@@ -372,20 +778,39 @@ class DashboardViewSet(viewsets.ViewSet):
                     "total_participantes": conteo_real
                 })
 
+                
+            prioridad_nombre = "N/A"
+
+            estrategia_nombre = "N/A"
+
+            estrategia_rel = actividad.estrategiaasociada_set.first()
+            if estrategia_rel and estrategia_rel.linea_estrategia:
+                estrategia_nombre = estrategia_rel.linea_estrategia.nombre
+
+            prioridad_rel = actividad.prioridadasociada_set.first()
+            if prioridad_rel and prioridad_rel.prioridad:
+                prioridad_nombre = prioridad_rel.prioridad.nombre
+
             return Response({
                 "id_actividad": actividad.id_actividad,
                 "nombre": actividad.nombre,
                 "total_participantes": total_unicos,
                 "indicador": {"nombre": actividad.indicador.nombre if actividad.indicador else "N/A"},
-                # ... prioridad y estrategia (igual que antes) ...
-                "temas_asociados": temas_data
+                "prioridad": {
+                    "nombre": prioridad_nombre
+                },
+                "estrategia": {
+                    "nombre": estrategia_nombre
+                },
+                "temas_asociados": temas_data,
+                "estamento_participantes": estamentos_data
             })
 
         except Actividad.DoesNotExist:
             return Response({"error": "Actividad no encontrada"}, status=404)
         
     # -------------------------------------------------------------------------
-    # 11. ESTADÍSTICAS TEMPORALES (Gráficos)
+    # 12. ESTADÍSTICAS TEMPORALES (Gráficos)
     # -------------------------------------------------------------------------
     @action(detail=False, methods=['get'])
     def por_tiempo_stats(self, request):
@@ -425,7 +850,7 @@ class DashboardViewSet(viewsets.ViewSet):
         return Response(data)
 
     # -------------------------------------------------------------------------
-    # 12. DETALLE DE RANGO TEMPORAL (Tarjeta de Detalles)
+    # 13. DETALLE DE RANGO TEMPORAL (Tarjeta de Detalles)
     # -------------------------------------------------------------------------
     @action(detail=False, methods=['get'])
     def detalle_rango_tiempo(self, request):
@@ -442,6 +867,36 @@ class DashboardViewSet(viewsets.ViewSet):
                 
             participaciones = Participacion.objects.filter(fecha__range=[inicio, fin]).select_related('actividad', 'tema')
 
+            total_unicos = (
+            participaciones
+            .values('persona')
+            .distinct()
+            .count()
+            )
+
+            conteo_por_estamento = (
+                participaciones
+                .values('persona__estamento')
+                .annotate(total=Count('persona', distinct=True))
+            )
+
+            estamentos_data = []
+
+            for item in conteo_por_estamento:
+                cantidad = item['total']
+                porcentaje = round((cantidad / total_unicos) * 100, 2) if total_unicos > 0 else 0
+
+                estamento_nombre = (
+                    item['persona__estamento']
+                    if item['persona__estamento'] is not None
+                    else "Sin Estamento"
+                )
+
+                estamentos_data.append({
+                    "estamento": estamento_nombre,
+                    "cantidad": cantidad,
+                    "porcentaje": porcentaje
+                })
             actividades_dict = {}
             total_p = 0
             
@@ -449,6 +904,7 @@ class DashboardViewSet(viewsets.ViewSet):
                 act_id = p.actividad.id_actividad
                 if act_id not in actividades_dict:
                     actividades_dict[act_id] = {
+                        "id_actividad": act_id,
                         "nombre": p.actividad.nombre,
                         "participantes_actividad": 0,
                         "temas": {}
@@ -462,15 +918,144 @@ class DashboardViewSet(viewsets.ViewSet):
 
             return Response({
                 "total_actividades": len(actividades_dict),
-                "total_participantes": total_p,
+                "total_participantes": total_unicos,
+                "estamento_participantes": estamentos_data,
                 "listado": list(actividades_dict.values())
             })
         
         except (ValidationError, ValueError):
             return Response({"error": "Una de las fechas proporcionadas no existe en el calendario"}, status=400)
         
+    # -------------------------------------------------------------------------
+    # 14. DETALLE ACTIVIDAD POR RANGO DE TIEMPO (Tarjeta de Detalles)
+    # -------------------------------------------------------------------------
+    @action(detail=False, methods=['get'])
+    def detalle_actividad_range(self, request):
+        activity_id = request.query_params.get('id')
+        inicio_raw = request.query_params.get('inicio')
+        fin_raw = request.query_params.get('fin')
 
+        if not activity_id:
+            return Response({"error": "ID requerido"}, status=400)
 
+        try:
+            actividad = Actividad.objects.get(pk=activity_id)
+
+            inicio = parse_date(inicio_raw) if inicio_raw else None
+            fin = parse_date(fin_raw) if fin_raw else None
+
+            participaciones = Participacion.objects.filter(actividad=actividad)
+
+            if inicio and fin:
+                participaciones = participaciones.filter(fecha__range=[inicio, fin])
+
+            # A. Personas únicas
+            total_unicos = (
+                participaciones
+                .values('persona')
+                .distinct()
+                .count()
+            )
+
+            conteo_por_estamento = (
+                participaciones
+                .values('persona__estamento')
+                .annotate(total=Count('persona', distinct=True))
+            )
+
+            estamentos_data = []
+
+            for item in conteo_por_estamento:
+                cantidad = item['total']
+                porcentaje = round((cantidad / total_unicos) * 100, 2) if total_unicos > 0 else 0
+
+                estamento_nombre = (
+                    item['persona__estamento']
+                    if item['persona__estamento'] is not None
+                    else "Sin Estamento"
+                )
+
+                estamentos_data.append({
+                    "estamento": estamento_nombre,
+                    "cantidad": cantidad,
+                    "porcentaje": porcentaje
+                })
+
+            # B. Temas
+            conteo_por_tema = (
+                participaciones
+                .values('tema__nombre')
+                .annotate(total_participantes=Count('id_participacion'))
+            )
+
+            temas_data = []
+
+            for item in conteo_por_tema:
+                nombre_tema = item['tema__nombre'] if item['tema__nombre'] else "Asistencia General"
+
+                temas_data.append({
+                    "tema__nombre": nombre_tema,
+                    "total_participantes": item['total_participantes']
+                })
+
+            return Response({
+                "id_actividad": actividad.id_actividad,
+                "nombre": actividad.nombre,
+                "total_participantes": participaciones.count(),
+                "total_participantes_unicos": total_unicos,
+                "temas_asociados": temas_data,
+                "estamento_participantes": estamentos_data,
+            })
+
+        except Actividad.DoesNotExist:
+            return Response({"error": "Actividad no encontrada"}, status=404)
+
+    # -------------------------------------------------------------------------
+    # 14. DETALLES PERSONA (Resumen de actividades)
+    # -------------------------------------------------------------------------
+    @action(detail=True, methods=['get'])
+    def participaciones_persona(self, request, pk=None):
+
+        try:
+            persona = Persona.objects.select_related("escuela__facultad").get(pk=pk)
+
+            # Actividades en las que participó
+            actividades = (
+                Participacion.objects
+                .filter(persona=persona)
+                .values(
+                    "actividad__id_actividad",
+                    "actividad__nombre"
+                )
+                .annotate(participaciones=Count("id_participacion"))
+                .order_by("-participaciones")
+            )
+
+            # Participaciones por año
+            participaciones_anio = (
+                Participacion.objects
+                .filter(persona=persona)
+                .values("anio")
+                .annotate(total=Count("id_participacion"))
+                .order_by("anio")
+            )
+
+            total = Participacion.objects.filter(persona=persona).count()
+
+            data = {
+                "persona": persona.nombre,
+                "estamento": persona.estamento,
+                "escuela": persona.escuela.nombre if persona.escuela else None,
+                "facultad": persona.escuela.facultad.nombre if persona.escuela and persona.escuela.facultad else None,
+                "total_participaciones": total,
+                "actividades": list(actividades),
+                "participaciones_por_anio": list(participaciones_anio)
+            }
+
+            return Response(data)
+
+        except Persona.DoesNotExist:
+            return Response({"error": "Persona no encontrada"}, status=404)
 
 # ------------------------------------------
 # CRUD ViewSets
@@ -560,7 +1145,7 @@ class ActividadViewSet(viewsets.ModelViewSet):
                         linea_proyecto=lp_instance
                     )
                 except LineaProyecto.DoesNotExist:
-                    pass # O lanzar error según tu lógica de negocio
+                    pass 
 
             # C. Crear Relación: Prioridad (PrioridadAsociada)
             if prioridad_id:

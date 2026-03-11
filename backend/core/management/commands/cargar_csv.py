@@ -14,7 +14,7 @@ from core.models import (
     Sede,
     Tema,
     TemaAsociado,
-    Prioridad,  # <--- Lugar eliminado
+    Prioridad,  
     PrioridadAsociada,
     LineaEstrategia,
     EstrategiaAsociada,
@@ -52,7 +52,7 @@ def convertir_fecha(fecha_str):
         "%d/%m/%Y",  # 24/05/2024
         "%d/%m/%y",  # 24/05/24
         "%Y/%m/%d",  # 2024/05/24
-        "%d/%m",  # 24/05 -> si quieres asumir año actual (opcional)
+        "%d/%m", 
     ]
 
     for fmt in formatos:
@@ -113,7 +113,7 @@ class Command(BaseCommand):
         for i, row in df.iterrows():
 
             # ---------------------------------------------------------
-            # ✅ 1. Limpieza de columnas del CSV
+            # 1. Limpieza de columnas del CSV
             # ---------------------------------------------------------
             anio = limpiar(row.get("Año"))
             actividad_nombre = limpiar(row.get("Actividad"))
@@ -167,7 +167,7 @@ class Command(BaseCommand):
             )
 
             # ---------------------------------------------------------
-            # ✅ 2. Facultad y Escuela
+            # 2. Facultad y Escuela
             # ---------------------------------------------------------
             facultad_obj = None
             if facultad_nombre:
@@ -185,7 +185,7 @@ class Command(BaseCommand):
                 )
 
             # ---------------------------------------------------------
-            # ✅ 3. Persona o Estudiante (LÓGICA UNIFICADA CON FUZZY)
+            # 3. Persona o Estudiante (LÓGICA UNIFICADA CON FUZZY)
             # ---------------------------------------------------------
             # Normalizar valores
             correo_normalizado = (correo or "").strip().lower() if correo else None
@@ -318,7 +318,7 @@ class Command(BaseCommand):
 
             # ---- PASO 3: Actualizar o crear Persona
             if persona_obj:
-                # 🔄 ACTUALIZAR EXISTENTE (solo sobrescribe si CSV aporta valor)
+                #  ACTUALIZAR EXISTENTE (solo sobrescribe si CSV aporta valor)
                 if nombre_persona and (
                     not persona_obj.nombre or persona_obj.nombre.strip() == ""
                 ):
@@ -380,7 +380,7 @@ class Command(BaseCommand):
 
                 persona_obj.save()
             else:
-                # 🆕 CREAR NUEVO (solo con valores que existen)
+                # CREAR NUEVO (solo con valores que existen)
                 crear_datos = {}
                 if nombre_persona:
                     crear_datos["nombre"] = nombre_persona
@@ -448,7 +448,7 @@ class Command(BaseCommand):
                         )
 
             # ---------------------------------------------------------
-            # ✅ 4. Indicador
+            # 4. Indicador
             # ---------------------------------------------------------
             indicador_obj = None
             if indicador_nombre:
@@ -458,7 +458,7 @@ class Command(BaseCommand):
                 )
 
             # ---------------------------------------------------------
-            # ✅ 5. Actividad
+            # 5. Actividad
             # ---------------------------------------------------------
             actividad_defaults = {"indicador": indicador_obj}
             if actividad_nombre_original:
@@ -468,7 +468,7 @@ class Command(BaseCommand):
             )
 
             # ---------------------------------------------------------
-            # ✅ 6. Actividad consolidada and su relación
+            # 6. Actividad consolidada and su relación
             # ---------------------------------------------------------
             if actividad_consolidada_nombre:
                 act_con_defaults = {}
@@ -484,7 +484,7 @@ class Command(BaseCommand):
                 )
 
             # ---------------------------------------------------------
-            # ✅ 7. Línea de proyecto
+            # 7. Línea de proyecto
             # ---------------------------------------------------------
             if linea_proyecto_nombre:
                 linea_proj_defaults = {}
@@ -500,7 +500,7 @@ class Command(BaseCommand):
                 )
 
             # ---------------------------------------------------------
-            # ✅ 8. Sede
+            # 8. Sede
             # ---------------------------------------------------------
             sede_obj = None
             if sede_nombre:
@@ -508,7 +508,7 @@ class Command(BaseCommand):
 
 
             # ---------------------------------------------------------
-            # ✅ 9. Tema
+            # 9. Tema
             # ---------------------------------------------------------
             tema_obj = None            
             if tema_nombre:
@@ -520,7 +520,7 @@ class Command(BaseCommand):
 
             
             # ---------------------------------------------------------
-            # ✅ 10. Participación (Ahora incluye la Sede directamente)
+            # 10. Participación (Ahora incluye la Sede directamente)
             # ---------------------------------------------------------
             # Ajuste: Se agrega 'sede=sede_obj' dentro de los argumentos
             part_obj, _ = Participacion.objects.get_or_create(
@@ -534,7 +534,7 @@ class Command(BaseCommand):
          
 
             # ---------------------------------------------------------
-            # ✅ 11. Prioridad
+            # 11. Prioridad
             # ---------------------------------------------------------
             if prioridad_nombre:
                 prioridad_defaults = {}
@@ -548,7 +548,7 @@ class Command(BaseCommand):
                 )
 
             # ---------------------------------------------------------
-            # ✅ 12. Línea de estrategia
+            # 12. Línea de estrategia
             # ---------------------------------------------------------
             if estrategia_nombre:
                 est_defaults = {}
@@ -564,4 +564,4 @@ class Command(BaseCommand):
             # ---------------------------------------------------------
             self.stdout.write(self.style.SUCCESS(f"Fila {i+1} procesada"))
 
-        self.stdout.write(self.style.SUCCESS("✅ Importación completada"))
+        self.stdout.write(self.style.SUCCESS("Importación completada"))
