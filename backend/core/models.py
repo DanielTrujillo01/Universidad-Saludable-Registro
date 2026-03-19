@@ -7,7 +7,7 @@ from django.core.validators import MinValueValidator, MaxValueValidator
 # -------------------------
 class Sede(models.Model):
     id_sede = models.AutoField(primary_key=True)
-    nombre = models.CharField(max_length=200,unique=True)
+    nombre = models.CharField(max_length=300,unique=True)
     nombre_original = models.CharField(max_length=300, null=True, blank=True)
 
     def __str__(self):
@@ -19,7 +19,7 @@ class Sede(models.Model):
 # -------------------------
 class LineaProyecto(models.Model):
     id_linea_proyecto = models.AutoField(primary_key=True)
-    nombre = models.CharField(max_length=200,)
+    nombre = models.CharField(max_length=300,)
     nombre_original = models.CharField(max_length=300, null=True, blank=True)
 
     def __str__(self):
@@ -31,7 +31,7 @@ class LineaProyecto(models.Model):
 # -------------------------
 class Facultad(models.Model):
     id_facultad = models.AutoField(primary_key=True)
-    nombre = models.CharField(max_length=200)
+    nombre = models.CharField(max_length=300)
     nombre_original = models.CharField(max_length=300, null=True, blank=True)
 
     def __str__(self):
@@ -40,7 +40,7 @@ class Facultad(models.Model):
 
 class Escuela(models.Model):
     id_escuela = models.AutoField(primary_key=True)
-    nombre = models.CharField(max_length=200)
+    nombre = models.CharField(max_length=300)
     nombre_original = models.CharField(max_length=300, null=True, blank=True)
     facultad = models.ForeignKey(
         Facultad, on_delete=models.CASCADE, null=True, blank=True
@@ -57,7 +57,7 @@ class Persona(models.Model):
     id_persona = models.AutoField(primary_key=True)
 
     # Valores normalizados
-    nombre = models.CharField(max_length=200, null=True, blank=False)
+    nombre = models.CharField(max_length=300, null=True, blank=False)
     tipo_documento = models.CharField(max_length=100, null=True, blank=True)
 
     # Valores originales
@@ -99,7 +99,7 @@ class Estudiante(Persona):
 # -------------------------
 class Indicador(models.Model):
     id_indicador = models.AutoField(primary_key=True)
-    nombre = models.CharField(max_length=200)
+    nombre = models.CharField(max_length=300)
     nombre_original = models.CharField(max_length=300, null=True, blank=True)
 
     def __str__(self):
@@ -107,48 +107,96 @@ class Indicador(models.Model):
 
 
 # -------------------------
-# Actividad
+# Estrategia 
 # -------------------------
-class Actividad(models.Model):
-    id_actividad = models.AutoField(primary_key=True)
-    nombre = models.CharField(max_length=200, null=False, blank=False)
+class Estrategia(models.Model):
+    id_estrategia = models.AutoField(primary_key=True)
+    nombre = models.CharField(max_length=300)
+
+    def __str__(self):
+        return self.nombre
+    
+# -------------------------
+# Acción 
+# -------------------------
+class Accion(models.Model):
+    id_accion = models.AutoField(primary_key=True)
+    nombre = models.CharField(max_length=300)
     nombre_original = models.CharField(max_length=300, null=True, blank=True)
 
     indicador = models.ForeignKey(
         Indicador, on_delete=models.SET_NULL, null=True, blank=True
     )
 
+    estrategia = models.ForeignKey(
+        Estrategia, on_delete=models.CASCADE,null=False, blank=False
+)
+
     def __str__(self):
         return self.nombre
 
+# -------------------------
+# Actividad 
+# -------------------------
+class Actividad(models.Model):
+    id_actividad = models.AutoField(primary_key=True)
+    nombre = models.CharField(max_length=300)
+
+    def __str__(self):
+        return self.nombre
+    
 
 # -------------------------
-# Tema y Tema Asociado
+# Actividad asociada 
+# -------------------------
+class ActividadAsociada(models.Model):
+    id_actividad_asociada = models.AutoField(primary_key=True)
+    accion = models.ForeignKey(Accion, on_delete=models.CASCADE,null=False,blank=False)
+    actividad = models.ForeignKey(Actividad, on_delete=models.CASCADE,null=False,blank=False)
+
+    def __str__(self):
+        return f"ActividadAsociada {self.id_actividad_asociada}"
+    
+# -------------------------
+# Tema
 # -------------------------
 class Tema(models.Model):
     id_tema = models.AutoField(primary_key=True)
-    nombre = models.CharField(max_length=200)
+    nombre = models.CharField(max_length=300)
 
     def __str__(self):
         return self.nombre
-
-
-class TemaAsociado(models.Model):  
+    
+# -------------------------
+# Tema asociado 
+# -------------------------
+class TemaAsociado(models.Model):
     id_tema_asociado = models.AutoField(primary_key=True)
-    actividad = models.ForeignKey(Actividad, on_delete=models.CASCADE)
-    tema = models.ForeignKey(Tema, on_delete=models.CASCADE)
+    actividad = models.ForeignKey(Actividad, on_delete=models.CASCADE,null=False,blank=False)
+    tema = models.ForeignKey(Tema, on_delete=models.CASCADE,null=False,blank=False)
 
     def __str__(self):
         return f"TemaAsociado {self.id_tema_asociado}"
     
 
 # -------------------------
-# Asociación Proyecto
+# Asociación Proyecto 
 # -------------------------
 class AsociacionProyecto(models.Model):
     id_asociacion_proyecto = models.AutoField(primary_key=True)
-    linea_proyecto = models.ForeignKey(LineaProyecto, on_delete=models.CASCADE)
-    actividad = models.ForeignKey(Actividad, on_delete=models.CASCADE)
+    accion = models.ForeignKey(
+    Accion,
+    on_delete=models.CASCADE,
+    null=False,
+    blank=False
+    )
+    linea_proyecto = models.ForeignKey(
+    LineaProyecto,
+    on_delete=models.CASCADE,
+    null=False,
+    blank=False
+    )
+
 
     def __str__(self):
         return f"Asociación {self.id_asociacion_proyecto}"
@@ -157,32 +205,22 @@ class AsociacionProyecto(models.Model):
 # -------------------------
 # Participación (intermedia entre Persona y Actividad)
 # -------------------------
-class Participacion(models.Model):  
+class Participacion(models.Model):
     id_participacion = models.AutoField(primary_key=True)
+
     persona = models.ForeignKey(Persona, on_delete=models.CASCADE)
+
+    accion = models.ForeignKey(Accion, on_delete=models.CASCADE)
     actividad = models.ForeignKey(Actividad, on_delete=models.CASCADE)
-    
-    # NUEVO CAMPO: Relaciona la persona con el taller/tema específico
     tema = models.ForeignKey(Tema, on_delete=models.SET_NULL, null=True, blank=True)
-    
-    fecha = models.DateField(null=True, blank=False)
-    anio = models.PositiveIntegerField(null=True, blank=False)
-    sede = models.ForeignKey(Sede, on_delete=models.CASCADE, null=False, blank=True)
 
-    def __str__(self):
-        return f"Participación {self.id_participacion} - {self.persona.nombre}"
+    fecha = models.DateField()
+    anio = models.PositiveIntegerField()
 
-
-# -------------------------
-# Lugar (tabla intermedia Participación ↔ Sede)
-# -------------------------
-class Lugar(models.Model):
-    id_lugar = models.AutoField(primary_key=True)
-    participacion = models.ForeignKey(Participacion, on_delete=models.CASCADE)
     sede = models.ForeignKey(Sede, on_delete=models.CASCADE)
 
     def __str__(self):
-        return f"Lugar {self.id_lugar}"
+        return f"{self.persona} - {self.actividad}"
 
 
 # -------------------------
@@ -190,7 +228,7 @@ class Lugar(models.Model):
 # -------------------------
 class ActividadConsolidada(models.Model):
     id_actividad_consolidada = models.AutoField(primary_key=True)
-    nombre = models.CharField(max_length=200)
+    nombre = models.CharField(max_length=300)
     nombre_original = models.CharField(max_length=300, null=True, blank=True)
 
     def __str__(self):
@@ -199,7 +237,7 @@ class ActividadConsolidada(models.Model):
 
 class Consolidacion(models.Model):
     id_consolidacion = models.AutoField(primary_key=True)
-    actividad = models.ForeignKey(Actividad, on_delete=models.CASCADE)
+    accion = models.ForeignKey(Accion, on_delete=models.CASCADE)
     actividad_consolidada = models.ForeignKey(
         ActividadConsolidada, on_delete=models.CASCADE
     )
@@ -213,7 +251,7 @@ class Consolidacion(models.Model):
 # -------------------------
 class Prioridad(models.Model):
     id_prioridad = models.AutoField(primary_key=True)
-    nombre = models.CharField(max_length=200)
+    nombre = models.CharField(max_length=300)
     nombre_original = models.CharField(max_length=300, null=True, blank=True)
 
     def __str__(self):
@@ -222,8 +260,8 @@ class Prioridad(models.Model):
 
 class PrioridadAsociada(models.Model):
     id_prioridad_asociada = models.AutoField(primary_key=True)
-    actividad = models.ForeignKey(Actividad, on_delete=models.CASCADE)
-    prioridad = models.ForeignKey(Prioridad, on_delete=models.CASCADE)
+    accion = models.ForeignKey(Accion, on_delete=models.CASCADE,null=False,blank=False)
+    prioridad = models.ForeignKey(Prioridad, on_delete=models.CASCADE,null=False,blank=False)
 
     def __str__(self):
         return f"PrioridadAsociada {self.id_prioridad_asociada}"
@@ -234,7 +272,7 @@ class PrioridadAsociada(models.Model):
 # -------------------------
 class LineaEstrategia(models.Model):
     id_linea_estrategia = models.AutoField(primary_key=True)
-    nombre = models.CharField(max_length=200)
+    nombre = models.CharField(max_length=300)
     nombre_original = models.CharField(max_length=300, null=True, blank=True)
 
     def __str__(self):
@@ -243,8 +281,8 @@ class LineaEstrategia(models.Model):
 
 class EstrategiaAsociada(models.Model):
     id_estrategia_asociada = models.AutoField(primary_key=True)
-    actividad = models.ForeignKey(Actividad, on_delete=models.CASCADE)
-    linea_estrategia = models.ForeignKey(LineaEstrategia, on_delete=models.CASCADE)
+    accion = models.ForeignKey(Accion, on_delete=models.CASCADE,null=False,blank=False)
+    linea_estrategia = models.ForeignKey(LineaEstrategia, on_delete=models.CASCADE,null=False,blank=False)
 
     def __str__(self):
         return f"EstrategiaAsociada {self.id_estrategia_asociada}"

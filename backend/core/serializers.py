@@ -1,166 +1,192 @@
 from rest_framework import serializers
-from .models import (
-    Sede, LineaProyecto, Facultad, Escuela, Persona, Estudiante,
-    Indicador, Actividad, AsociacionProyecto, Participacion, Lugar,
-    ActividadConsolidada, Consolidacion, Tema, TemaAsociado,
-    Prioridad, PrioridadAsociada, LineaEstrategia, EstrategiaAsociada
-)
+from .models import *
 
 # -------------------------
-# Sede
+# Básicos
 # -------------------------
+
 class SedeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Sede
-        fields = '__all__' # Incluye: id_sede, nombre
+        fields = '__all__'
 
-# -------------------------
-# Línea de proyecto
-# -------------------------
+
 class LineaProyectoSerializer(serializers.ModelSerializer):
     class Meta:
         model = LineaProyecto
-        fields = '__all__' # Incluye: id_linea_proyecto, nombre
+        fields = '__all__'
 
-# -------------------------
-# Facultad y Escuela
-# -------------------------
+
 class FacultadSerializer(serializers.ModelSerializer):
     class Meta:
         model = Facultad
-        fields = '__all__' # Incluye: id_facultad, nombre
+        fields = '__all__'
+
 
 class EscuelaSerializer(serializers.ModelSerializer):
-    # Opcionalmente, para mostrar el nombre de la facultad en lugar de solo su ID
-    # facultad_nombre = serializers.CharField(source='facultad.nombre', read_only=True)
+    facultad = FacultadSerializer(read_only=True)
 
     class Meta:
         model = Escuela
-        fields = '__all__' # Incluye: id_escuela, nombre, facultad
+        fields = '__all__'
+
 
 # -------------------------
-# Persona y Estudiante (herencia)
+# Persona / Estudiante
 # -------------------------
+
 class PersonaSerializer(serializers.ModelSerializer):
+    escuela = EscuelaSerializer(read_only=True)
+
     class Meta:
         model = Persona
         fields = '__all__'
-        # Incluye: id_persona, nombre, tipo_documento, numero_documento, edad,
-        # correo, sexo, telefono, estamento, escuela
+
 
 class EstudianteSerializer(serializers.ModelSerializer):
-    # Si quieres que herede todos los campos de Persona y añada 'semestre'
     class Meta:
         model = Estudiante
-        fields = '__all__' # Incluye todos los campos de Persona + semestre
-        # Alternativamente, para incluir solo los campos específicos y el ID:
-        # fields = ('id_persona', 'semestre', 'nombre', 'correo', 'escuela', ...)
+        fields = '__all__'
 
 
 # -------------------------
-# Indicador
+# Núcleo del modelo
 # -------------------------
+
 class IndicadorSerializer(serializers.ModelSerializer):
     class Meta:
         model = Indicador
-        fields = '__all__' # Incluye: id_indicador, nombre
+        fields = '__all__'
 
 
-# -------------------------
-# Actividad
-# -------------------------
+class EstrategiaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Estrategia
+        fields = '__all__'
+
+
+class AccionSerializer(serializers.ModelSerializer):
+    indicador = IndicadorSerializer(read_only=True)
+    estrategia = serializers.PrimaryKeyRelatedField(
+        queryset=Estrategia.objects.all()
+    )
+
+    class Meta:
+        model = Accion
+        fields = '__all__'
+
+
 class ActividadSerializer(serializers.ModelSerializer):
-    # Opcional: mostrar el nombre del indicador en el detalle de la actividad
-    # indicador_nombre = serializers.CharField(source='indicador.nombre', read_only=True)
-
     class Meta:
         model = Actividad
-        fields = '__all__' # Incluye: id_actividad, nombre, indicador
+        fields = '__all__'
+
+
+class TemaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Tema
+        fields = '__all__'
 
 
 # -------------------------
-# Asociación Proyecto
+# Tablas intermedias
 # -------------------------
+
+class ActividadAsociadaSerializer(serializers.ModelSerializer):
+    accion = AccionSerializer(read_only=True)
+    actividad = ActividadSerializer(read_only=True)
+
+    class Meta:
+        model = ActividadAsociada
+        fields = '__all__'
+
+
+class TemaAsociadoSerializer(serializers.ModelSerializer):
+    actividad = ActividadSerializer(read_only=True)
+    tema = TemaSerializer(read_only=True)
+
+    class Meta:
+        model = TemaAsociado
+        fields = '__all__'
+
+
 class AsociacionProyectoSerializer(serializers.ModelSerializer):
+    linea_proyecto = LineaProyectoSerializer(read_only=True)
+    accion = AccionSerializer(read_only=True)
+
     class Meta:
         model = AsociacionProyecto
-        fields = '__all__' # Incluye: id_asociacion_proyecto, linea_proyecto, actividad
+        fields = '__all__'
 
 
 # -------------------------
-# Lugar (tabla intermedia Participación ↔ Sede)
+# Participación (clave)
 # -------------------------
-class LugarSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Lugar
-        fields = '__all__' # Incluye: id_lugar, participacion, sede
 
-
-# -------------------------
-# Participación (intermedia entre Persona y Actividad)
-# -------------------------
 class ParticipacionSerializer(serializers.ModelSerializer):
+    persona = PersonaSerializer(read_only=True)
+    accion = AccionSerializer(read_only=True)
+    actividad = ActividadSerializer(read_only=True)
+    tema = TemaSerializer(read_only=True)
+    sede = SedeSerializer(read_only=True)
+
     class Meta:
         model = Participacion
         fields = '__all__'
-        # Incluye: id_participacion, persona, actividad, fecha, anio, sedes
-
-
-# -------------------------
-# Actividad Consolidada
-# -------------------------
-class ActividadConsolidadaSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ActividadConsolidada
-        fields = '__all__' # Incluye: id_actividad_consolidada, nombre
 
 
 # -------------------------
 # Consolidación
 # -------------------------
+
+class ActividadConsolidadaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ActividadConsolidada
+        fields = '__all__'
+
+
 class ConsolidacionSerializer(serializers.ModelSerializer):
+    accion = AccionSerializer(read_only=True)
+    actividad_consolidada = ActividadConsolidadaSerializer(read_only=True)
+
     class Meta:
         model = Consolidacion
-        fields = '__all__' # Incluye: id_consolidacion, actividad, actividad_consolidada
+        fields = '__all__'
 
 
 # -------------------------
-# Tema y Tema Asociado
+# Prioridad
 # -------------------------
-class TemaSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Tema
-        fields = '__all__' # Incluye: id_tema, nombre
 
-class TemaAsociadoSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = TemaAsociado
-        fields = '__all__' # Incluye: id_tema_asociado, actividad, tema
-
-
-# -------------------------
-# Prioridad y Prioridad Asociada
-# -------------------------
 class PrioridadSerializer(serializers.ModelSerializer):
     class Meta:
         model = Prioridad
-        fields = '__all__' # Incluye: id_prioridad, nombre
+        fields = '__all__'
+
 
 class PrioridadAsociadaSerializer(serializers.ModelSerializer):
+    accion = AccionSerializer(read_only=True)
+    prioridad = PrioridadSerializer(read_only=True)
+
     class Meta:
         model = PrioridadAsociada
-        fields = '__all__' # Incluye: id_prioridad_asociada, actividad, prioridad
+        fields = '__all__'
 
 
 # -------------------------
-# Línea de Estrategia y Estrategia Asociada
+# Estrategia extendida
 # -------------------------
+
 class LineaEstrategiaSerializer(serializers.ModelSerializer):
     class Meta:
         model = LineaEstrategia
-        fields = '__all__' # Incluye: id_linea_estrategia, nombre
+        fields = '__all__'
+
 
 class EstrategiaAsociadaSerializer(serializers.ModelSerializer):
+    accion = AccionSerializer(read_only=True)
+    linea_estrategia = LineaEstrategiaSerializer(read_only=True)
+
     class Meta:
         model = EstrategiaAsociada
-        fields = '__all__' # Incluye: id_estrategia_asociada, actividad, linea_estrategia
+        fields = '__all__'

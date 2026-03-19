@@ -16,17 +16,17 @@ from django.db import transaction
 
 from .models import (
     Sede, LineaProyecto, Facultad, Escuela, Persona, Estudiante,
-    Indicador, Actividad, AsociacionProyecto, Participacion, Lugar,
+    Indicador, Actividad, AsociacionProyecto, Participacion,
     ActividadConsolidada, Consolidacion, Tema, TemaAsociado,
-    Prioridad, PrioridadAsociada, LineaEstrategia, EstrategiaAsociada
+    Prioridad, PrioridadAsociada, LineaEstrategia, EstrategiaAsociada,Estrategia,Accion,
 )
 from .serializers import (
     SedeSerializer, LineaProyectoSerializer, FacultadSerializer, EscuelaSerializer,
     PersonaSerializer, EstudianteSerializer, IndicadorSerializer, ActividadSerializer,
-    AsociacionProyectoSerializer, ParticipacionSerializer, LugarSerializer,
+    AsociacionProyectoSerializer, ParticipacionSerializer,AccionSerializer,
     ActividadConsolidadaSerializer, ConsolidacionSerializer, TemaSerializer,
     TemaAsociadoSerializer, PrioridadSerializer, PrioridadAsociadaSerializer,
-    LineaEstrategiaSerializer, EstrategiaAsociadaSerializer
+    LineaEstrategiaSerializer, EstrategiaAsociadaSerializer,EstrategiaSerializer
 )
 
 
@@ -1103,45 +1103,44 @@ class IndicadorViewSet(viewsets.ModelViewSet):
     filter_backends = [SearchFilter]
     search_fields = ['nombre', 'nombre_original']
 
-class ActividadViewSet(viewsets.ModelViewSet):
-    queryset = Actividad.objects.all()
-    serializer_class = ActividadSerializer
+class AccionViewSet(viewsets.ModelViewSet):
+    queryset = Accion.objects.all()
+    serializer_class = AccionSerializer
     filter_backends = [SearchFilter]
     search_fields = ['nombre', 'nombre_original']
 
     @action(detail=True, methods=['get'], permission_classes=[AllowAny])
-    def temas(self, request, pk=None):
+    def actividades(self, request, pk=None):
         """
-        Devuelve la lista de temas asociados a una actividad específica.
-        Accesible públicamente.
+        Devuelve las actividades asociadas a una acción.
         """
-        # Buscamos los temas a través de la tabla intermedia 'TemaAsociado'
-        # Filtramos los temas donde exista una asociación con la actividad 'pk'
-        temas = Tema.objects.filter(temaasociado__actividad_id=pk).values('id_tema', 'nombre')
-        
-        # Devolvemos una lista limpia
-        return Response(list(temas))
+        actividades = Actividad.objects.filter(
+            actividadasociada__accion_id=pk
+        ).values('id_actividad', 'nombre').distinct()
+
+        return Response(list(actividades))
     
     def create(self, request, *args, **kwargs):
         # 1. Extraemos los IDs de las relaciones opcionales
         linea_proyecto_id = request.data.get('id_linea_proyecto')
         prioridad_id = request.data.get('id_prioridad')
         linea_estrategia_id = request.data.get('id_linea_estrategia')
+        estrategia_id = request.data.get("id_estrategia")
 
         # 2. Usamos una transacción atómica para garantizar integridad
         with transaction.atomic():
-            # A. Crear la Actividad base
+            # A. Crear la Accion basica base
             serializer = self.get_serializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             self.perform_create(serializer)
-            actividad_instance = serializer.instance
+            accion_instance = serializer.instance
 
             # B. Crear Relación: Línea de Proyecto (AsociacionProyecto)
             if linea_proyecto_id:
                 try:
                     lp_instance = LineaProyecto.objects.get(pk=linea_proyecto_id)
                     AsociacionProyecto.objects.create(
-                        actividad=actividad_instance,
+                        actividad=accion_instance,
                         linea_proyecto=lp_instance
                     )
                 except LineaProyecto.DoesNotExist:
@@ -1152,18 +1151,18 @@ class ActividadViewSet(viewsets.ModelViewSet):
                 try:
                     p_instance = Prioridad.objects.get(pk=prioridad_id)
                     PrioridadAsociada.objects.create(
-                        actividad=actividad_instance,
+                        actividad=accion_instance,
                         prioridad=p_instance
                     )
                 except Prioridad.DoesNotExist:
                     pass
 
-            # D. Crear Relación: Estrategia (EstrategiaAsociada)
+            # D. Crear Relación: LineaEstrategia (EstrategiaAsociada)
             if linea_estrategia_id:
                 try:
                     le_instance = LineaEstrategia.objects.get(pk=linea_estrategia_id)
                     EstrategiaAsociada.objects.create(
-                        actividad=actividad_instance,
+                        actividad=accion_instance,
                         linea_estrategia=le_instance
                     )
                 except LineaEstrategia.DoesNotExist:
@@ -1180,10 +1179,6 @@ class ParticipacionViewSet(viewsets.ModelViewSet):
     queryset = Participacion.objects.all()
     serializer_class = ParticipacionSerializer
 
-class LugarViewSet(viewsets.ModelViewSet):
-    queryset = Lugar.objects.all()
-    serializer_class = LugarSerializer
-
 class ActividadConsolidadaViewSet(viewsets.ModelViewSet):
     queryset = ActividadConsolidada.objects.all()
     serializer_class = ActividadConsolidadaSerializer
@@ -1194,6 +1189,51 @@ class ConsolidacionViewSet(viewsets.ModelViewSet):
     queryset = Consolidacion.objects.all()
     serializer_class = ConsolidacionSerializer
 
+# --------------------------------------------------------
+# ACTIVIDAD VIEWSET (MODIFICADO PARA CREACIÓN CONJUNTA)
+# --------------------------------------------------------
+from rest_framework import viewsets, status
+from rest_framework.response import Response
+from rest_framework.filters import SearchFilter
+from django.db import transaction
+
+class ActividadViewSet(viewsets.ModelViewSet):
+    queryset = Actividad.objects.all()
+    serializer_class = ActividadSerializer
+    filter_backends = [SearchFilter]
+    search_fields = ['nombre']
+
+    def create(self, request, *args, **kwargs):
+        # 1. Extraemos el id_accion del cuerpo de la petición (si viene)
+        accion_id = request.data.get('id_accion')
+
+        # Usamos atomic para asegurar que si falla la asociación, no se cree la actividad suelta
+        with transaction.atomic():
+            # 2. Creamos la Actividad normalmente usando el método del padre
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            self.perform_create(serializer)
+
+            actividad_instance = serializer.instance
+
+            # 3. Si se envió una acción, creamos la relación en ActividadAsociada
+            if accion_id:
+                try:
+                    accion_instance = Accion.objects.get(pk=accion_id)
+                    ActividadAsociada.objects.create(
+                        accion=accion_instance,
+                        actividad=actividad_instance
+                    )
+                except Accion.DoesNotExist:
+                    # Retornamos error si el ID de acción no existe
+                    return Response(
+                        {"error": "La acción especificada no existe"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+            headers = self.get_success_headers(serializer.data)
+            return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        
 # --------------------------------------------------------
 # TEMA VIEWSET (MODIFICADO PARA CREACIÓN CONJUNTA)
 # --------------------------------------------------------
@@ -1239,6 +1279,12 @@ class TemaViewSet(viewsets.ModelViewSet):
 class TemaAsociadoViewSet(viewsets.ModelViewSet):
     queryset = TemaAsociado.objects.all()
     serializer_class = TemaAsociadoSerializer
+
+class EstrategiaViewSet(viewsets.ModelViewSet):
+    queryset = Estrategia.objects.all()
+    serializer_class = EstrategiaSerializer
+    filter_backends = [SearchFilter]
+    search_fields = ['nombre', 'nombre_original']
 
 class PrioridadViewSet(viewsets.ModelViewSet):
     queryset = Prioridad.objects.all()
