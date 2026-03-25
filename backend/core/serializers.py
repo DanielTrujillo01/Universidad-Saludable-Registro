@@ -26,6 +26,14 @@ class FacultadSerializer(serializers.ModelSerializer):
 class EscuelaSerializer(serializers.ModelSerializer):
     facultad = FacultadSerializer(read_only=True)
 
+    facultad_id = serializers.PrimaryKeyRelatedField(
+        queryset=Facultad.objects.all(),
+        source='facultad',
+        write_only=True,
+        required=False,
+        allow_null=True
+    )
+
     class Meta:
         model = Escuela
         fields = '__all__'
@@ -37,6 +45,14 @@ class EscuelaSerializer(serializers.ModelSerializer):
 
 class PersonaSerializer(serializers.ModelSerializer):
     escuela = EscuelaSerializer(read_only=True)
+
+    escuela_id = serializers.PrimaryKeyRelatedField(
+        queryset=Escuela.objects.all(),
+        source='escuela',
+        write_only=True,
+        required=False, 
+        allow_null=True
+    )
 
     class Meta:
         model = Persona
@@ -67,8 +83,20 @@ class EstrategiaSerializer(serializers.ModelSerializer):
 
 class AccionSerializer(serializers.ModelSerializer):
     indicador = IndicadorSerializer(read_only=True)
-    estrategia = serializers.PrimaryKeyRelatedField(
-        queryset=Estrategia.objects.all()
+    estrategia = EstrategiaSerializer(read_only=True)
+
+    indicador_id = serializers.PrimaryKeyRelatedField(
+        queryset=Indicador.objects.all(),
+        source='indicador',
+        write_only=True,
+        required=False,
+        allow_null=True
+    )
+
+    estrategia_id = serializers.PrimaryKeyRelatedField(
+        queryset=Estrategia.objects.all(),
+        source='estrategia',
+        write_only=True
     )
 
     class Meta:
@@ -124,11 +152,29 @@ class AsociacionProyectoSerializer(serializers.ModelSerializer):
 # -------------------------
 
 class ParticipacionSerializer(serializers.ModelSerializer):
+    # Lectura (nested)
     persona = PersonaSerializer(read_only=True)
     accion = AccionSerializer(read_only=True)
     actividad = ActividadSerializer(read_only=True)
     tema = TemaSerializer(read_only=True)
     sede = SedeSerializer(read_only=True)
+
+    # Escritura (IDs)
+    persona_id = serializers.PrimaryKeyRelatedField(
+        queryset=Persona.objects.all(), source='persona', write_only=True
+    )
+    accion_id = serializers.PrimaryKeyRelatedField(
+        queryset=Accion.objects.all(), source='accion', write_only=True
+    )
+    actividad_id = serializers.PrimaryKeyRelatedField(
+        queryset=Actividad.objects.all(), source='actividad', write_only=True
+    )
+    tema_id = serializers.PrimaryKeyRelatedField(
+        queryset=Tema.objects.all(), source='tema', write_only=True, required=False, allow_null=True
+    )
+    sede_id = serializers.PrimaryKeyRelatedField(
+        queryset=Sede.objects.all(), source='sede', write_only=True
+    )
 
     class Meta:
         model = Participacion

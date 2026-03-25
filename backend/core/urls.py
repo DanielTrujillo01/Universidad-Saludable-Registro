@@ -10,7 +10,7 @@ from .views import (
     SedeViewSet, LineaProyectoViewSet, FacultadViewSet, EscuelaViewSet,
     PersonaViewSet, EstudianteViewSet, IndicadorViewSet, AccionViewSet,
     AsociacionProyectoViewSet, ParticipacionViewSet,
-    ActividadConsolidadaViewSet, ConsolidacionViewSet, TemaViewSet,
+    ActividadConsolidadaViewSet, ConsolidacionViewSet, ActividadViewSet, TemaViewSet,
     TemaAsociadoViewSet, PrioridadViewSet, PrioridadAsociadaViewSet,
     LineaEstrategiaViewSet, EstrategiaAsociadaViewSet,EstrategiaViewSet
 )
@@ -30,6 +30,7 @@ router.register(r'asociaciones-proyecto', AsociacionProyectoViewSet)
 router.register(r'participaciones', ParticipacionViewSet)
 router.register(r'actividades-consolidadas', ActividadConsolidadaViewSet)
 router.register(r'consolidaciones', ConsolidacionViewSet)
+router.register(r'actividades', ActividadViewSet )
 router.register(r'temas', TemaViewSet)
 router.register(r'temas-asociados', TemaAsociadoViewSet)
 router.register(r'estrategia', EstrategiaViewSet)

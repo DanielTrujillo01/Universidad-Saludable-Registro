@@ -14,9 +14,10 @@ from django.core.exceptions import ValidationError
 from django.utils.dateparse import parse_date
 from django.db import transaction
 
+
 from .models import (
     Sede, LineaProyecto, Facultad, Escuela, Persona, Estudiante,
-    Indicador, Actividad, AsociacionProyecto, Participacion,
+    Indicador, Actividad, ActividadAsociada, AsociacionProyecto, Participacion,
     ActividadConsolidada, Consolidacion, Tema, TemaAsociado,
     Prioridad, PrioridadAsociada, LineaEstrategia, EstrategiaAsociada,Estrategia,Accion,
 )
@@ -1140,7 +1141,7 @@ class AccionViewSet(viewsets.ModelViewSet):
                 try:
                     lp_instance = LineaProyecto.objects.get(pk=linea_proyecto_id)
                     AsociacionProyecto.objects.create(
-                        actividad=accion_instance,
+                        accion=accion_instance,
                         linea_proyecto=lp_instance
                     )
                 except LineaProyecto.DoesNotExist:
@@ -1151,7 +1152,7 @@ class AccionViewSet(viewsets.ModelViewSet):
                 try:
                     p_instance = Prioridad.objects.get(pk=prioridad_id)
                     PrioridadAsociada.objects.create(
-                        actividad=accion_instance,
+                        accion=accion_instance,
                         prioridad=p_instance
                     )
                 except Prioridad.DoesNotExist:
@@ -1162,7 +1163,7 @@ class AccionViewSet(viewsets.ModelViewSet):
                 try:
                     le_instance = LineaEstrategia.objects.get(pk=linea_estrategia_id)
                     EstrategiaAsociada.objects.create(
-                        actividad=accion_instance,
+                        accion=accion_instance,
                         linea_estrategia=le_instance
                     )
                 except LineaEstrategia.DoesNotExist:
@@ -1192,11 +1193,6 @@ class ConsolidacionViewSet(viewsets.ModelViewSet):
 # --------------------------------------------------------
 # ACTIVIDAD VIEWSET (MODIFICADO PARA CREACIÓN CONJUNTA)
 # --------------------------------------------------------
-from rest_framework import viewsets, status
-from rest_framework.response import Response
-from rest_framework.filters import SearchFilter
-from django.db import transaction
-
 class ActividadViewSet(viewsets.ModelViewSet):
     queryset = Actividad.objects.all()
     serializer_class = ActividadSerializer
