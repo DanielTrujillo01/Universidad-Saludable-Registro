@@ -11,12 +11,6 @@ class SedeSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
-class LineaProyectoSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = LineaProyecto
-        fields = '__all__'
-
-
 class FacultadSerializer(serializers.ModelSerializer):
     class Meta:
         model = Facultad
@@ -68,13 +62,6 @@ class EstudianteSerializer(serializers.ModelSerializer):
 # -------------------------
 # Núcleo del modelo
 # -------------------------
-
-class IndicadorSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Indicador
-        fields = '__all__'
-
-
 class EstrategiaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Estrategia
@@ -82,17 +69,7 @@ class EstrategiaSerializer(serializers.ModelSerializer):
 
 
 class AccionSerializer(serializers.ModelSerializer):
-    indicador = IndicadorSerializer(read_only=True)
     estrategia = EstrategiaSerializer(read_only=True)
-
-    indicador_id = serializers.PrimaryKeyRelatedField(
-        queryset=Indicador.objects.all(),
-        source='indicador',
-        write_only=True,
-        required=False,
-        allow_null=True
-    )
-
     estrategia_id = serializers.PrimaryKeyRelatedField(
         queryset=Estrategia.objects.all(),
         source='estrategia',
@@ -138,15 +115,6 @@ class TemaAsociadoSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
-class AsociacionProyectoSerializer(serializers.ModelSerializer):
-    linea_proyecto = LineaProyectoSerializer(read_only=True)
-    accion = AccionSerializer(read_only=True)
-
-    class Meta:
-        model = AsociacionProyecto
-        fields = '__all__'
-
-
 # -------------------------
 # Participación (clave)
 # -------------------------
@@ -179,26 +147,6 @@ class ParticipacionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Participacion
         fields = '__all__'
-
-
-# -------------------------
-# Consolidación
-# -------------------------
-
-class ActividadConsolidadaSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ActividadConsolidada
-        fields = '__all__'
-
-
-class ConsolidacionSerializer(serializers.ModelSerializer):
-    accion = AccionSerializer(read_only=True)
-    actividad_consolidada = ActividadConsolidadaSerializer(read_only=True)
-
-    class Meta:
-        model = Consolidacion
-        fields = '__all__'
-
 
 # -------------------------
 # Prioridad

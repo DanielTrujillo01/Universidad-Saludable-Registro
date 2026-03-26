@@ -7,10 +7,9 @@ from rest_framework_simplejwt.views import (
 )
 from .views import (
     DashboardViewSet, # <--- 2. IMPORTA TU NUEVA VISTA AQUÍ
-    SedeViewSet, LineaProyectoViewSet, FacultadViewSet, EscuelaViewSet,
-    PersonaViewSet, EstudianteViewSet, IndicadorViewSet, AccionViewSet,
-    AsociacionProyectoViewSet, ParticipacionViewSet,
-    ActividadConsolidadaViewSet, ConsolidacionViewSet, ActividadViewSet, TemaViewSet,
+    SedeViewSet, FacultadViewSet, EscuelaViewSet,
+    PersonaViewSet, EstudianteViewSet, AccionViewSet,
+    ParticipacionViewSet, ActividadViewSet, TemaViewSet,
     TemaAsociadoViewSet, PrioridadViewSet, PrioridadAsociadaViewSet,
     LineaEstrategiaViewSet, EstrategiaAsociadaViewSet,EstrategiaViewSet
 )
@@ -19,17 +18,12 @@ router = DefaultRouter()
 
 
 router.register(r'sedes', SedeViewSet)
-router.register(r'lineas-proyecto', LineaProyectoViewSet)
 router.register(r'facultades', FacultadViewSet)
 router.register(r'escuelas', EscuelaViewSet)
 router.register(r'personas', PersonaViewSet)
 router.register(r'estudiantes', EstudianteViewSet)
-router.register(r'indicadores', IndicadorViewSet)
 router.register(r'acciones', AccionViewSet)
-router.register(r'asociaciones-proyecto', AsociacionProyectoViewSet)
 router.register(r'participaciones', ParticipacionViewSet)
-router.register(r'actividades-consolidadas', ActividadConsolidadaViewSet)
-router.register(r'consolidaciones', ConsolidacionViewSet)
 router.register(r'actividades', ActividadViewSet )
 router.register(r'temas', TemaViewSet)
 router.register(r'temas-asociados', TemaAsociadoViewSet)

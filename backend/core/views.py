@@ -16,16 +16,14 @@ from django.db import transaction
 
 
 from .models import (
-    Sede, LineaProyecto, Facultad, Escuela, Persona, Estudiante,
-    Indicador, Actividad, ActividadAsociada, AsociacionProyecto, Participacion,
-    ActividadConsolidada, Consolidacion, Tema, TemaAsociado,
+    Sede, Facultad, Escuela, Persona, Estudiante, Actividad, ActividadAsociada, Participacion,
+    Tema, TemaAsociado,
     Prioridad, PrioridadAsociada, LineaEstrategia, EstrategiaAsociada,Estrategia,Accion,
 )
 from .serializers import (
-    SedeSerializer, LineaProyectoSerializer, FacultadSerializer, EscuelaSerializer,
-    PersonaSerializer, EstudianteSerializer, IndicadorSerializer, ActividadSerializer,
-    AsociacionProyectoSerializer, ParticipacionSerializer,AccionSerializer,
-    ActividadConsolidadaSerializer, ConsolidacionSerializer, TemaSerializer,
+    SedeSerializer, FacultadSerializer, EscuelaSerializer,
+    PersonaSerializer, EstudianteSerializer,  ActividadSerializer,
+    ParticipacionSerializer,AccionSerializer, TemaSerializer,
     TemaAsociadoSerializer, PrioridadSerializer, PrioridadAsociadaSerializer,
     LineaEstrategiaSerializer, EstrategiaAsociadaSerializer,EstrategiaSerializer
 )
@@ -37,7 +35,7 @@ from .serializers import (
 class DashboardViewSet(viewsets.ViewSet):
     """
     ViewSet Híbrido:
-    - /resumen: Carga rápida inicial (KPIs, Prioridades, Indicadores).
+    - /resumen: Carga rápida inicial (KPIs, Prioridades).
     - /escuelas: Carga bajo demanda (Estadísticas por Escuela).
     - /evolucion: Carga bajo demanda (Línea de tiempo).
     """
@@ -61,13 +59,6 @@ class DashboardViewSet(viewsets.ViewSet):
             for item in prioridades_qs if item['prioridadasociada__prioridad__nombre']
         ]
 
-        # C. Gráfica: INDICADORES
-        indicadores_qs = Actividad.objects.values('indicador__nombre').annotate(total=Count('id_actividad'))
-        grafica_indicadores = [
-            {"name": item['indicador__nombre'] or "Sin Indicador", "value": item['total']}
-            for item in indicadores_qs
-        ]
-
         return Response({
             "kpis": {
                 "total_actividades": total_actividades,
@@ -75,8 +66,7 @@ class DashboardViewSet(viewsets.ViewSet):
                 "promedio_participantes": promedio,
             },
             "graficas": {
-                "prioridades": grafica_prioridades,
-                "indicadores": grafica_indicadores,
+                "prioridades": grafica_prioridades
                 # Nota: Escuelas ya no está aquí para aligerar la carga inicial
             }
         })
@@ -123,46 +113,6 @@ class DashboardViewSet(viewsets.ViewSet):
         ]
 
         return Response(grafica_tiempo)
-    
-    # -------------------------------------------------------------------------
-    # 4. CARGA ESPECÍFICA: INDICADORES
-    # URL: /api/dashboard/por_indicador/
-    # -------------------------------------------------------------------------
-    @action(detail=False, methods=['get'])
-    def por_indicador(self, request):
-        total_actividades = Actividad.objects.count()
-        
-        # Agrupamos por nombre de indicador y contamos
-        # Order_by('-total') asegura que el primero sea el "Top Indicator"
-        qs = Actividad.objects.values('indicador__nombre').annotate(
-            total=Count('id_actividad')
-        ).order_by('-total')
-
-        data_list = []
-        for item in qs:
-            cantidad = item['total']
-            nombre = item['indicador__nombre'] or "Sin Indicador"
-            
-            # Calculamos porcentaje
-            porcentaje = 0
-            if total_actividades > 0:
-                porcentaje = round((cantidad / total_actividades) * 100, 1)
-
-            data_list.append({
-                "name": nombre,
-                "actividades": cantidad,
-                "porcentaje": porcentaje
-            })
-
-        # Extraemos el "Top Indicator" (el primero de la lista ya ordenada)
-        top_indicator = data_list[0] if data_list else {"name": "N/A", "porcentaje": 0}
-
-        return Response({
-            "total_actividades": total_actividades,
-            "total_indicadores": len(data_list),
-            "top_indicator": top_indicator,
-            "data": data_list # Lista detallada para la tabla y gráficas
-        })
     
     # -------------------------------------------------------------------------
     # 5. CARGA ESPECÍFICA: PRIORIDADES
@@ -796,7 +746,6 @@ class DashboardViewSet(viewsets.ViewSet):
                 "id_actividad": actividad.id_actividad,
                 "nombre": actividad.nombre,
                 "total_participantes": total_unicos,
-                "indicador": {"nombre": actividad.indicador.nombre if actividad.indicador else "N/A"},
                 "prioridad": {
                     "nombre": prioridad_nombre
                 },
@@ -1068,12 +1017,6 @@ class SedeViewSet(viewsets.ModelViewSet):
     filter_backends = [SearchFilter]
     search_fields = ['nombre', 'nombre_original']
 
-class LineaProyectoViewSet(viewsets.ModelViewSet):
-    queryset = LineaProyecto.objects.all()
-    serializer_class = LineaProyectoSerializer
-    filter_backends = [SearchFilter]
-    search_fields = ['nombre']
-
 class FacultadViewSet(viewsets.ModelViewSet):
     queryset = Facultad.objects.all()
     serializer_class = FacultadSerializer
@@ -1098,12 +1041,6 @@ class EstudianteViewSet(viewsets.ModelViewSet):
     filter_backends = [SearchFilter]
     search_fields = ["nombre", "numero_documento"]
 
-class IndicadorViewSet(viewsets.ModelViewSet):
-    queryset = Indicador.objects.all()
-    serializer_class = IndicadorSerializer
-    filter_backends = [SearchFilter]
-    search_fields = ['nombre', 'nombre_original']
-
 class AccionViewSet(viewsets.ModelViewSet):
     queryset = Accion.objects.all()
     serializer_class = AccionSerializer
@@ -1123,10 +1060,8 @@ class AccionViewSet(viewsets.ModelViewSet):
     
     def create(self, request, *args, **kwargs):
         # 1. Extraemos los IDs de las relaciones opcionales
-        linea_proyecto_id = request.data.get('id_linea_proyecto')
         prioridad_id = request.data.get('id_prioridad')
         linea_estrategia_id = request.data.get('id_linea_estrategia')
-        estrategia_id = request.data.get("id_estrategia")
 
         # 2. Usamos una transacción atómica para garantizar integridad
         with transaction.atomic():
@@ -1135,17 +1070,6 @@ class AccionViewSet(viewsets.ModelViewSet):
             serializer.is_valid(raise_exception=True)
             self.perform_create(serializer)
             accion_instance = serializer.instance
-
-            # B. Crear Relación: Línea de Proyecto (AsociacionProyecto)
-            if linea_proyecto_id:
-                try:
-                    lp_instance = LineaProyecto.objects.get(pk=linea_proyecto_id)
-                    AsociacionProyecto.objects.create(
-                        accion=accion_instance,
-                        linea_proyecto=lp_instance
-                    )
-                except LineaProyecto.DoesNotExist:
-                    pass 
 
             # C. Crear Relación: Prioridad (PrioridadAsociada)
             if prioridad_id:
@@ -1172,23 +1096,10 @@ class AccionViewSet(viewsets.ModelViewSet):
             headers = self.get_success_headers(serializer.data)
             return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
-class AsociacionProyectoViewSet(viewsets.ModelViewSet):
-    queryset = AsociacionProyecto.objects.all()
-    serializer_class = AsociacionProyectoSerializer
-
 class ParticipacionViewSet(viewsets.ModelViewSet):
     queryset = Participacion.objects.all()
     serializer_class = ParticipacionSerializer
 
-class ActividadConsolidadaViewSet(viewsets.ModelViewSet):
-    queryset = ActividadConsolidada.objects.all()
-    serializer_class = ActividadConsolidadaSerializer
-    filter_backends = [SearchFilter]
-    search_fields = ['nombre', 'nombre_original']
-
-class ConsolidacionViewSet(viewsets.ModelViewSet):
-    queryset = Consolidacion.objects.all()
-    serializer_class = ConsolidacionSerializer
 
 # --------------------------------------------------------
 # ACTIVIDAD VIEWSET (MODIFICADO PARA CREACIÓN CONJUNTA)
@@ -1199,6 +1110,17 @@ class ActividadViewSet(viewsets.ModelViewSet):
     filter_backends = [SearchFilter]
     search_fields = ['nombre']
 
+    @action(detail=True, methods=['get'], permission_classes=[AllowAny])
+    def temas(self, request, pk=None):
+        """
+        Devuelve los temas asociados a una actividad.
+        """
+        temas = Tema.objects.filter(
+            temaasociado__actividad_id=pk
+        ).values('id_tema', 'nombre').distinct()
+
+        return Response(list(temas))
+    
     def create(self, request, *args, **kwargs):
         # 1. Extraemos el id_accion del cuerpo de la petición (si viene)
         accion_id = request.data.get('id_accion')

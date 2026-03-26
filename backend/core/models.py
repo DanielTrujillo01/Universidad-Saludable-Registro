@@ -13,19 +13,6 @@ class Sede(models.Model):
     def __str__(self):
         return self.nombre
 
-
-# -------------------------
-# Línea de proyecto
-# -------------------------
-class LineaProyecto(models.Model):
-    id_linea_proyecto = models.AutoField(primary_key=True)
-    nombre = models.CharField(max_length=300,)
-    nombre_original = models.CharField(max_length=300, null=False, blank=False)
-
-    def __str__(self):
-        return self.nombre
-
-
 # -------------------------
 # Facultad y Escuela
 # -------------------------
@@ -95,18 +82,6 @@ class Estudiante(Persona):
 
 
 # -------------------------
-# Indicador
-# -------------------------
-class Indicador(models.Model):
-    id_indicador = models.AutoField(primary_key=True)
-    nombre = models.CharField(max_length=300)
-    nombre_original = models.CharField(max_length=300, null=False, blank=False)
-
-    def __str__(self):
-        return self.nombre
-
-
-# -------------------------
 # Estrategia 
 # -------------------------
 class Estrategia(models.Model):
@@ -124,10 +99,6 @@ class Accion(models.Model):
     id_accion = models.AutoField(primary_key=True)
     nombre = models.CharField(max_length=300)
     nombre_original = models.CharField(max_length=300, null=False, blank=False)
-
-    indicador = models.ForeignKey(
-        Indicador, on_delete=models.SET_NULL, null=True, blank=True
-    )
 
     estrategia = models.ForeignKey(
         Estrategia, on_delete=models.CASCADE,null=False, blank=False
@@ -183,29 +154,6 @@ class TemaAsociado(models.Model):
     
 
 # -------------------------
-# Asociación Proyecto 
-# -------------------------
-class AsociacionProyecto(models.Model):
-    id_asociacion_proyecto = models.AutoField(primary_key=True)
-    accion = models.ForeignKey(
-    Accion,
-    on_delete=models.CASCADE,
-    null=False,
-    blank=False
-    )
-    linea_proyecto = models.ForeignKey(
-    LineaProyecto,
-    on_delete=models.CASCADE,
-    null=False,
-    blank=False
-    )
-
-
-    def __str__(self):
-        return f"Asociación {self.id_asociacion_proyecto}"
-
-
-# -------------------------
 # Participación (intermedia entre Persona y Actividad)
 # -------------------------
 class Participacion(models.Model):
@@ -224,30 +172,6 @@ class Participacion(models.Model):
 
     def __str__(self):
         return f"{self.persona} - {self.actividad}"
-
-
-# -------------------------
-# Actividad Consolidada
-# -------------------------
-class ActividadConsolidada(models.Model):
-    id_actividad_consolidada = models.AutoField(primary_key=True)
-    nombre = models.CharField(max_length=300)
-    nombre_original = models.CharField(max_length=300, null=False, blank=False)
-
-    def __str__(self):
-        return self.nombre
-
-
-class Consolidacion(models.Model):
-    id_consolidacion = models.AutoField(primary_key=True)
-    accion = models.ForeignKey(Accion, on_delete=models.CASCADE)
-    actividad_consolidada = models.ForeignKey(
-        ActividadConsolidada, on_delete=models.CASCADE
-    )
-
-    def __str__(self):
-        return f"Consolidación {self.id_consolidacion}"
-
 
 # -------------------------
 # Prioridad y Prioridad Asociada
