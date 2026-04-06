@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.db import transaction
 from .models import *
 
 # -------------------------
@@ -68,29 +69,106 @@ class EstrategiaSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
+from rest_framework import serializers
+from django.db import transaction
+
 class AccionSerializer(serializers.ModelSerializer):
-    estrategia = EstrategiaSerializer(read_only=True)
-    estrategia_id = serializers.PrimaryKeyRelatedField(
-        queryset=Estrategia.objects.all(),
-        source='estrategia',
-        write_only=True
+    id_prioridad = serializers.PrimaryKeyRelatedField(
+        queryset=Prioridad.objects.all(),
+        write_only=True,
+        required=True
+    )
+    
+    id_linea_estrategia = serializers.PrimaryKeyRelatedField(
+        queryset=LineaEstrategia.objects.all(),
+        write_only=True,
+        required=True
     )
 
     class Meta:
         model = Accion
         fields = '__all__'
 
+    @transaction.atomic
+    def create(self, validated_data):
+        prioridad = validated_data.pop('id_prioridad')
+        linea_estrategia = validated_data.pop('id_linea_estrategia')
+
+        # Crear la acción (la FK de estrategia ya viene en el modelo ✔)
+        accion = Accion.objects.create(**validated_data)
+
+        # Relación con prioridad
+        PrioridadAsociada.objects.create(
+            accion=accion,
+            prioridad=prioridad
+        )
+
+        # Relación con línea estratégica
+        EstrategiaAsociada.objects.create(
+            accion=accion,
+            linea_estrategia=linea_estrategia
+        )
+
+        return accion
+
 
 class ActividadSerializer(serializers.ModelSerializer):
+    id_accion = serializers.IntegerField(write_only=True, required=True)
+
     class Meta:
         model = Actividad
         fields = '__all__'
 
+    def validate_id_accion(self, value):
+        try:
+            accion = Accion.objects.get(pk=value)
+        except Accion.DoesNotExist:
+            raise serializers.ValidationError("La acción especificada no existe")
+        
+        return accion  # 👈 devolvemos la instancia, no el id
+
+    @transaction.atomic
+    def create(self, validated_data):
+        # Sacamos la acción ya validada
+        accion = validated_data.pop('id_accion')
+
+        # Creamos la actividad
+        actividad = Actividad.objects.create(**validated_data)
+
+        # Creamos la relación
+        ActividadAsociada.objects.create(
+            accion=accion,
+            actividad=actividad
+        )
+
+        return actividad
+
 
 class TemaSerializer(serializers.ModelSerializer):
+    id_actividad = serializers.PrimaryKeyRelatedField(
+        queryset=Actividad.objects.all(),
+        write_only=True,
+        required=True
+    )
+
     class Meta:
         model = Tema
         fields = '__all__'
+
+    @transaction.atomic
+    def create(self, validated_data):
+        actividad = validated_data.pop('id_actividad')
+
+        # Crear el tema
+        tema = Tema.objects.create(**validated_data)
+
+        # Crear la relación
+        TemaAsociado.objects.create(
+            tema=tema,
+            actividad=actividad
+        )
+
+        return tema
 
 
 # -------------------------
