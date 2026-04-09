@@ -13,6 +13,7 @@ from django.db.models import Avg
 from django.core.exceptions import ValidationError
 from django.utils.dateparse import parse_date
 from django.db import transaction
+from django_filters.rest_framework import DjangoFilterBackend
 
 
 from .models import (
@@ -1066,8 +1067,12 @@ class ParticipacionViewSet(viewsets.ModelViewSet):
 class ActividadViewSet(viewsets.ModelViewSet):
     queryset = Actividad.objects.all()
     serializer_class = ActividadSerializer
-    filter_backends = [SearchFilter]
+    filter_backends = [SearchFilter, DjangoFilterBackend] # Agregamos el backend de filtros
     search_fields = ['nombre']
+    # Definimos por qué campos se puede filtrar exactamente
+    filterset_fields = {
+        'actividadasociada__accion_id': ['exact'], # Esto permite filtrar por el ID del padre
+    }
 
     @action(detail=True, methods=['get'], permission_classes=[AllowAny])
     def temas(self, request, pk=None):
@@ -1083,8 +1088,11 @@ class ActividadViewSet(viewsets.ModelViewSet):
 class TemaViewSet(viewsets.ModelViewSet):
     queryset = Tema.objects.all()
     serializer_class = TemaSerializer
-    filter_backends = [SearchFilter]
+    filter_backends = [SearchFilter, DjangoFilterBackend]
     search_fields = ['nombre']
+    filterset_fields = {
+        'temaasociado__actividad_id': ['exact'], # Filtro exacto por ID de actividad
+    }
 
 
 class TemaAsociadoViewSet(viewsets.ModelViewSet):
