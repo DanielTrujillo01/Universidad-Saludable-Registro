@@ -12,7 +12,7 @@ from core.models import (
     Indicador,
     Participacion,
     Sede,
-    Tema,
+    Seccion,
     TemaAsociado,
     Prioridad,  
     PrioridadAsociada,
@@ -512,7 +512,7 @@ class Command(BaseCommand):
             # ---------------------------------------------------------
             tema_obj = None            
             if tema_nombre:
-                tema_obj, _ = Tema.objects.get_or_create(nombre=tema_nombre)
+                tema_obj, _ = Seccion.objects.get_or_create(nombre=tema_nombre)
                 TemaAsociado.objects.get_or_create(
                     actividad=actividad_obj, tema=tema_obj
                 )

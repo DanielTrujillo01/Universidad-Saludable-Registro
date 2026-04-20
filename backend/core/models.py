@@ -1,7 +1,6 @@
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 
-
 # -------------------------
 # Sede
 # -------------------------
@@ -12,30 +11,35 @@ class Sede(models.Model):
 
     def __str__(self):
         return self.nombre
+    
 
 # -------------------------
-# Facultad y Escuela
+# Unidad Organizativa (Facultad, Escuela, Dependencia Administrativa)
 # -------------------------
-class Facultad(models.Model):
-    id_facultad = models.AutoField(primary_key=True)
-    nombre = models.CharField(max_length=300)
-    nombre_original = models.CharField(max_length=300, null=False, blank=False)
+class UnidadOrganizativa(models.Model):
+    TIPO_CHOICES = [
+        ('FACULTAD', 'Facultad'),
+        ('ESCUELA', 'Escuela'),
+        ('DEPENDENCIA', 'Dependencia Administrativa'),
+    ]
 
-    def __str__(self):
-        return self.nombre
-
-
-class Escuela(models.Model):
-    id_escuela = models.AutoField(primary_key=True)
-    nombre = models.CharField(max_length=300)
-    nombre_original = models.CharField(max_length=300, null=False, blank=False)
-    facultad = models.ForeignKey(
-        Facultad, on_delete=models.CASCADE, null=True, blank=True
+    nombre = models.CharField(max_length=255)
+    tipo = models.CharField(max_length=20, choices=TIPO_CHOICES)
+    
+    padre = models.ForeignKey(
+        'self', 
+        on_delete=models.CASCADE, 
+        null=True, 
+        blank=True, 
+        related_name='subunidades'
     )
 
     def __str__(self):
-        return self.nombre
+        return f"{self.nombre} ({self.get_tipo_display()})"
 
+    class Meta:
+        verbose_name = "Unidad Organizativa"
+        verbose_name_plural = "Unidades Organizativas"
 
 # -------------------------
 # Persona y Estudiante (herencia)
@@ -60,26 +64,23 @@ class Persona(models.Model):
     edad = models.PositiveIntegerField(null=True, blank=True)
     correo = models.EmailField(null=True, blank=True, unique=True)
     sexo = models.CharField(max_length=20, null=True, blank=False)
-    telefono = models.BigIntegerField(
-        validators=[MinValueValidator(1000000000), MaxValueValidator(9999999999)],
-        null=True,
-        blank=True
-    )
-    estamento = models.CharField(max_length=50, null=True, blank=False)
-    escuela = models.ForeignKey(
-        Escuela, on_delete=models.SET_NULL, null=True, blank=True
+    unidadOrganizativa = models.ForeignKey(
+        UnidadOrganizativa, on_delete=models.SET_NULL, null=True, blank=True
     )
 
     def __str__(self):
         return self.nombre
 
-
-class Estudiante(Persona):
-    semestre = models.PositiveIntegerField(null=True, blank=True)
+class Vinculacion(models.Model):
+    id_vinculacion = models.AutoField(primary_key=True)
+    id_persona = models.ForeignKey(Persona, on_delete=models.CASCADE,null=False, blank=False)
+    id_unidad_organizativa = models.ForeignKey(UnidadOrganizativa, on_delete=models.CASCADE,null=False, blank=False)
+    tipo_estamento = models.CharField(max_length=100, null=True, blank=True)
+    estado = models.BooleanField(default=True) 
+    semestre = models.IntegerField(null=True, blank=True)
 
     def __str__(self):
-        return f"Estudiante: {self.nombre}"
-
+        return f"{self.id_persona} - {self.tipo_estamento}"
 
 # -------------------------
 # Estrategia 
@@ -112,6 +113,7 @@ class Accion(models.Model):
 # -------------------------
 class Actividad(models.Model):
     id_actividad = models.AutoField(primary_key=True)
+    id_accion = models.ForeignKey(Accion, on_delete=models.CASCADE,null=False,blank=False)
     nombre = models.CharField(max_length=300)
     nombre_original = models.CharField(max_length=300, null=False, blank=False)
 
@@ -120,39 +122,17 @@ class Actividad(models.Model):
     
 
 # -------------------------
-# Actividad asociada 
+# Seccion
 # -------------------------
-class ActividadAsociada(models.Model):
-    id_actividad_asociada = models.AutoField(primary_key=True)
-    accion = models.ForeignKey(Accion, on_delete=models.CASCADE,null=False,blank=False)
-    actividad = models.ForeignKey(Actividad, on_delete=models.CASCADE,null=False,blank=False)
-
-    def __str__(self):
-        return f"ActividadAsociada {self.id_actividad_asociada}"
-    
-# -------------------------
-# Tema
-# -------------------------
-class Tema(models.Model):
-    id_tema = models.AutoField(primary_key=True)
+class Seccion(models.Model):
+    id_seccion = models.AutoField(primary_key=True)
+    id_actividad = models.ForeignKey(Actividad, on_delete=models.CASCADE,null=False,blank=False)
     nombre = models.CharField(max_length=300)
     nombre_original = models.CharField(max_length=300, null=False, blank=False)
 
     def __str__(self):
         return self.nombre
     
-# -------------------------
-# Tema asociado 
-# -------------------------
-class TemaAsociado(models.Model):
-    id_tema_asociado = models.AutoField(primary_key=True)
-    actividad = models.ForeignKey(Actividad, on_delete=models.CASCADE,null=False,blank=False)
-    tema = models.ForeignKey(Tema, on_delete=models.CASCADE,null=False,blank=False)
-
-    def __str__(self):
-        return f"TemaAsociado {self.id_tema_asociado}"
-    
-
 # -------------------------
 # Participación (intermedia entre Persona y Actividad)
 # -------------------------
@@ -160,15 +140,24 @@ class Participacion(models.Model):
     id_participacion = models.AutoField(primary_key=True)
 
     persona = models.ForeignKey(Persona, on_delete=models.CASCADE)
+    vinculacion = models.ForeignKey(Vinculacion, on_delete=models.SET_NULL, null=True, blank=True)
+
+    semestre = models.IntegerField(null=True, blank=True)
 
     accion = models.ForeignKey(Accion, on_delete=models.CASCADE)
     actividad = models.ForeignKey(Actividad, on_delete=models.CASCADE)
-    tema = models.ForeignKey(Tema, on_delete=models.SET_NULL, null=True, blank=True)
+    seccion = models.ForeignKey(Seccion, on_delete=models.SET_NULL, null=True, blank=True)
 
     fecha = models.DateField()
     anio = models.PositiveIntegerField()
 
     sede = models.ForeignKey(Sede, on_delete=models.CASCADE)
+
+    def save(self, *args, **kwargs):
+        if self.vinculacion and self.vinculacion.semestre:
+            self.semestre = self.vinculacion.semestre
+        
+        super(Participacion, self).save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.persona} - {self.actividad}"

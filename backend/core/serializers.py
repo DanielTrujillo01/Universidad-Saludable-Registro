@@ -12,53 +12,45 @@ class SedeSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
-class FacultadSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Facultad
-        fields = '__all__'
-
-
-class EscuelaSerializer(serializers.ModelSerializer):
-    facultad = FacultadSerializer(read_only=True)
-
-    facultad_id = serializers.PrimaryKeyRelatedField(
-        queryset=Facultad.objects.all(),
-        source='facultad',
-        write_only=True,
-        required=False,
-        allow_null=True
-    )
+class UnidadOrganizativaSerializer(serializers.ModelSerializer):
+    # Permite ver el nombre del "padre" en las consultas GET
+    padre_nombre = serializers.ReadOnlyField(source='padre.nombre')
 
     class Meta:
-        model = Escuela
-        fields = '__all__'
-
+        model = UnidadOrganizativa
+        fields = ['id', 'nombre', 'tipo', 'padre', 'padre_nombre']
 
 # -------------------------
-# Persona / Estudiante
+# Persona
 # -------------------------
+# Este es el nuevo para el buscador (Ligero y con el nombre de la unidad)
+class VinculacionResumenSerializer(serializers.ModelSerializer):
+    nombre_unidad = serializers.ReadOnlyField(source='id_unidad_organizativa.nombre')
 
+    class Meta:
+        model = Vinculacion
+        fields = ['id_vinculacion', 'tipo_estamento', 'nombre_unidad', 'semestre']
+
+# Luego lo usas dentro de Persona
 class PersonaSerializer(serializers.ModelSerializer):
-    escuela = EscuelaSerializer(read_only=True)
-
-    escuela_id = serializers.PrimaryKeyRelatedField(
-        queryset=Escuela.objects.all(),
-        source='escuela',
-        write_only=True,
-        required=False, 
-        allow_null=True
-    )
+    # Relación inversa: trae las vinculaciones de esta persona
+    vinculaciones = VinculacionResumenSerializer(source='vinculacion_set', many=True, read_only=True)
+    
+    unidadOrganizativa_detalle = UnidadOrganizativaSerializer(source='unidadOrganizativa', read_only=True)
 
     class Meta:
         model = Persona
-        fields = '__all__'
+        fields = [
+            'id_persona', 'nombre', 'nombre_original', 'tipo_documento', 
+            'numero_documento', 'correo', 'sexo', 'vinculaciones', 'edad',
+            'unidadOrganizativa_detalle'
+        ]
 
 
-class EstudianteSerializer(serializers.ModelSerializer):
+class VinculacionSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Estudiante
+        model = Vinculacion
         fields = '__all__'
-
 
 # -------------------------
 # Núcleo del modelo
@@ -69,16 +61,13 @@ class EstrategiaSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
-from rest_framework import serializers
-from django.db import transaction
-
 class AccionSerializer(serializers.ModelSerializer):
+    # IDs para creación manual en el método create o vía lógica directa
     id_prioridad = serializers.PrimaryKeyRelatedField(
         queryset=Prioridad.objects.all(),
         write_only=True,
-        required=True
+        required=True  
     )
-    
     id_linea_estrategia = serializers.PrimaryKeyRelatedField(
         queryset=LineaEstrategia.objects.all(),
         write_only=True,
@@ -91,140 +80,58 @@ class AccionSerializer(serializers.ModelSerializer):
 
     @transaction.atomic
     def create(self, validated_data):
-        prioridad = validated_data.pop('id_prioridad')
-        linea_estrategia = validated_data.pop('id_linea_estrategia')
+        # Extraemos las relaciones que van a tablas intermedias
+        prioridad = validated_data.pop('id_prioridad', None)
+        linea_estrategia = validated_data.pop('id_linea_estrategia', None)
 
-        # Crear la acción (la FK de estrategia ya viene en el modelo ✔)
+        # Crear la acción
         accion = Accion.objects.create(**validated_data)
 
-        # Relación con prioridad
-        PrioridadAsociada.objects.create(
-            accion=accion,
-            prioridad=prioridad
-        )
-
-        # Relación con línea estratégica
-        EstrategiaAsociada.objects.create(
-            accion=accion,
-            linea_estrategia=linea_estrategia
-        )
+        # Crear las relaciones asociadas si se enviaron los IDs
+        if prioridad:
+            PrioridadAsociada.objects.create(accion=accion, prioridad=prioridad)
+        
+        if linea_estrategia:
+            EstrategiaAsociada.objects.create(accion=accion, linea_estrategia=linea_estrategia)
 
         return accion
 
 
 class ActividadSerializer(serializers.ModelSerializer):
-    id_accion = serializers.IntegerField(write_only=True, required=True)
-
     class Meta:
         model = Actividad
         fields = '__all__'
 
-    def validate_id_accion(self, value):
-        try:
-            accion = Accion.objects.get(pk=value)
-        except Accion.DoesNotExist:
-            raise serializers.ValidationError("La acción especificada no existe")
-        
-        return accion  # 👈 devolvemos la instancia, no el id
 
-    @transaction.atomic
-    def create(self, validated_data):
-        # Sacamos la acción ya validada
-        accion = validated_data.pop('id_accion')
-
-        # Creamos la actividad
-        actividad = Actividad.objects.create(**validated_data)
-
-        # Creamos la relación
-        ActividadAsociada.objects.create(
-            accion=accion,
-            actividad=actividad
-        )
-
-        return actividad
-
-
-class TemaSerializer(serializers.ModelSerializer):
-    id_actividad = serializers.PrimaryKeyRelatedField(
-        queryset=Actividad.objects.all(),
-        write_only=True,
-        required=True
-    )
-
+class SeccionSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Tema
+        model = Seccion
         fields = '__all__'
-
-    @transaction.atomic
-    def create(self, validated_data):
-        actividad = validated_data.pop('id_actividad')
-
-        # Crear el tema
-        tema = Tema.objects.create(**validated_data)
-
-        # Crear la relación
-        TemaAsociado.objects.create(
-            tema=tema,
-            actividad=actividad
-        )
-
-        return tema
-
-
-# -------------------------
-# Tablas intermedias
-# -------------------------
-
-class ActividadAsociadaSerializer(serializers.ModelSerializer):
-    accion = AccionSerializer(read_only=True)
-    actividad = ActividadSerializer(read_only=True)
-
-    class Meta:
-        model = ActividadAsociada
-        fields = '__all__'
-
-
-class TemaAsociadoSerializer(serializers.ModelSerializer):
-    actividad = ActividadSerializer(read_only=True)
-    tema = TemaSerializer(read_only=True)
-
-    class Meta:
-        model = TemaAsociado
-        fields = '__all__'
-
 
 # -------------------------
 # Participación (clave)
 # -------------------------
-
 class ParticipacionSerializer(serializers.ModelSerializer):
-    # Lectura (nested)
-    persona = PersonaSerializer(read_only=True)
-    accion = AccionSerializer(read_only=True)
-    actividad = ActividadSerializer(read_only=True)
-    tema = TemaSerializer(read_only=True)
-    sede = SedeSerializer(read_only=True)
-
-    # Escritura (IDs)
-    persona_id = serializers.PrimaryKeyRelatedField(
-        queryset=Persona.objects.all(), source='persona', write_only=True
-    )
-    accion_id = serializers.PrimaryKeyRelatedField(
-        queryset=Accion.objects.all(), source='accion', write_only=True
-    )
-    actividad_id = serializers.PrimaryKeyRelatedField(
-        queryset=Actividad.objects.all(), source='actividad', write_only=True
-    )
-    tema_id = serializers.PrimaryKeyRelatedField(
-        queryset=Tema.objects.all(), source='tema', write_only=True, required=False, allow_null=True
-    )
-    sede_id = serializers.PrimaryKeyRelatedField(
-        queryset=Sede.objects.all(), source='sede', write_only=True
-    )
+    semestre = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Participacion
-        fields = '__all__'
+        fields = [
+            'id_participacion', 'persona', 'vinculacion', 
+            'accion', 'actividad', 'seccion', 'fecha', 
+            'anio', 'sede', 'semestre'
+        ]
+    
+    # Opcional: Si quieres validar que la vinculación pertenezca a la persona
+    def validate(self, data):
+        vinculacion = data.get('vinculacion')
+        persona = data.get('persona')
+        
+        if vinculacion and vinculacion.id_persona != persona:
+            raise serializers.ValidationError(
+                {"vinculacion": "La vinculación seleccionada no pertenece a esta persona."}
+            )
+        return data
 
 # -------------------------
 # Prioridad

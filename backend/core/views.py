@@ -16,18 +16,9 @@ from django.db import transaction
 from django_filters.rest_framework import DjangoFilterBackend
 
 
-from .models import (
-    Sede, Facultad, Escuela, Persona, Estudiante, Actividad, ActividadAsociada, Participacion,
-    Tema, TemaAsociado,
-    Prioridad, PrioridadAsociada, LineaEstrategia, EstrategiaAsociada,Estrategia,Accion,
-)
-from .serializers import (
-    SedeSerializer, FacultadSerializer, EscuelaSerializer,
-    PersonaSerializer, EstudianteSerializer,  ActividadSerializer,
-    ParticipacionSerializer,AccionSerializer, TemaSerializer,
-    TemaAsociadoSerializer, PrioridadSerializer, PrioridadAsociadaSerializer,
-    LineaEstrategiaSerializer, EstrategiaAsociadaSerializer,EstrategiaSerializer
-)
+from .models import *
+
+from .serializers import *
 
 
 #--------------------------------------------------
@@ -722,11 +713,11 @@ class DashboardViewSet(viewsets.ViewSet):
                 # Contamos cuántas personas registraron asistencia específica a este tema
                 conteo_real = Participacion.objects.filter(
                     actividad=actividad, 
-                    tema=ta.tema
+                    tema=ta.seccion
                 ).count()
 
                 temas_data.append({
-                    "tema__nombre": ta.tema.nombre,
+                    "tema__nombre": ta.seccion.nombre,
                     "total_participantes": conteo_real
                 })
 
@@ -1018,29 +1009,33 @@ class SedeViewSet(viewsets.ModelViewSet):
     filter_backends = [SearchFilter]
     search_fields = ['nombre', 'nombre_original']
 
-class FacultadViewSet(viewsets.ModelViewSet):
-    queryset = Facultad.objects.all()
-    serializer_class = FacultadSerializer
-    filter_backends = [SearchFilter]
-    search_fields = ['nombre', 'nombre_original']
-
-class EscuelaViewSet(viewsets.ModelViewSet):
-    queryset = Escuela.objects.all()
-    serializer_class = EscuelaSerializer
-    filter_backends = [SearchFilter]
-    search_fields = ['nombre', 'nombre_original']
-
 class PersonaViewSet(viewsets.ModelViewSet):
     queryset = Persona.objects.all()
     serializer_class = PersonaSerializer
     filter_backends = [SearchFilter] 
     search_fields = ["nombre", "numero_documento", "nombre_original"]
 
-class EstudianteViewSet(viewsets.ModelViewSet):
-    queryset = Estudiante.objects.all()
-    serializer_class = EstudianteSerializer
-    filter_backends = [SearchFilter]
-    search_fields = ["nombre", "numero_documento"]
+class UnidadOrganizativaViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet para gestionar Facultades, Escuelas y Dependencias.
+    Permite filtrar por tipo y buscar por nombre.
+    """
+    queryset = UnidadOrganizativa.objects.all()
+    serializer_class = UnidadOrganizativaSerializer
+    filter_backends = [SearchFilter, DjangoFilterBackend]
+    search_fields = ['nombre']
+    filterset_fields = ['tipo', 'padre']
+
+class VinculacionViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet para gestionar la relación entre Personas y Unidades.
+    Esencial para que Participacion herede el semestre.
+    """
+    queryset = Vinculacion.objects.all()
+    serializer_class = VinculacionSerializer
+    filter_backends = [SearchFilter, DjangoFilterBackend]
+    search_fields = ['tipo_estamento', 'id_persona__nombre']
+    filterset_fields = ['id_persona', 'id_unidad_organizativa', 'estado', 'semestre']
 
 class AccionViewSet(viewsets.ModelViewSet):
     queryset = Accion.objects.all()
@@ -1048,10 +1043,12 @@ class AccionViewSet(viewsets.ModelViewSet):
     filter_backends = [SearchFilter]
     search_fields = ['nombre', 'nombre_original']
 
+    # En AccionViewSet
     @action(detail=True, methods=['get'], permission_classes=[AllowAny])
     def actividades(self, request, pk=None):
+        # Buscamos actividades cuyo id_accion sea el ID de la acción actual
         actividades = Actividad.objects.filter(
-            actividadasociada__accion_id=pk
+            id_accion_id=pk  # Usamos id_accion_id para filtrar por el entero
         ).values('id_actividad', 'nombre').distinct()
 
         return Response(list(actividades))
@@ -1070,34 +1067,27 @@ class ActividadViewSet(viewsets.ModelViewSet):
     filter_backends = [SearchFilter, DjangoFilterBackend] # Agregamos el backend de filtros
     search_fields = ['nombre']
     # Definimos por qué campos se puede filtrar exactamente
-    filterset_fields = {
-        'actividadasociada__accion_id': ['exact'], # Esto permite filtrar por el ID del padre
-    }
+    filterset_fields = {'id_accion': ['exact']}
 
+    # En ActividadViewSet
     @action(detail=True, methods=['get'], permission_classes=[AllowAny])
-    def temas(self, request, pk=None):
-        temas = Tema.objects.filter(
-            temaasociado__actividad_id=pk
-        ).values('id_tema', 'nombre').distinct()
+    def secciones(self, request, pk=None):
+        # Buscamos secciones cuyo id_actividad sea el ID de la actividad actual
+        secciones = Seccion.objects.filter(
+            id_actividad_id=pk
+        ).values('id_seccion', 'nombre').distinct()
 
-        return Response(list(temas))
+        return Response(list(secciones))
         
 # --------------------------------------------------------
-# TEMA VIEWSET (MODIFICADO PARA CREACIÓN CONJUNTA)
+# SECCIÓN VIEWSET (MODIFICADO PARA CREACIÓN CONJUNTA)
 # --------------------------------------------------------
-class TemaViewSet(viewsets.ModelViewSet):
-    queryset = Tema.objects.all()
-    serializer_class = TemaSerializer
+class SeccionViewSet(viewsets.ModelViewSet):
+    queryset = Seccion.objects.all()
+    serializer_class = SeccionSerializer
     filter_backends = [SearchFilter, DjangoFilterBackend]
     search_fields = ['nombre']
-    filterset_fields = {
-        'temaasociado__actividad_id': ['exact'], # Filtro exacto por ID de actividad
-    }
-
-
-class TemaAsociadoViewSet(viewsets.ModelViewSet):
-    queryset = TemaAsociado.objects.all()
-    serializer_class = TemaAsociadoSerializer
+    filterset_fields = {'id_actividad': ['exact']}
 
 class EstrategiaViewSet(viewsets.ModelViewSet):
     queryset = Estrategia.objects.all()

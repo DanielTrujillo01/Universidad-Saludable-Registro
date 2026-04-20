@@ -6,27 +6,23 @@ from rest_framework_simplejwt.views import (
     TokenRefreshView,
 )
 from .views import (
-    DashboardViewSet, # <--- 2. IMPORTA TU NUEVA VISTA AQUÍ
-    SedeViewSet, FacultadViewSet, EscuelaViewSet,
-    PersonaViewSet, EstudianteViewSet, AccionViewSet,
-    ParticipacionViewSet, ActividadViewSet, TemaViewSet,
-    TemaAsociadoViewSet, PrioridadViewSet, PrioridadAsociadaViewSet,
+    DashboardViewSet, UnidadOrganizativaViewSet, VinculacionViewSet,
+    SedeViewSet, PersonaViewSet, AccionViewSet,
+    ParticipacionViewSet, ActividadViewSet, SeccionViewSet,
+    PrioridadViewSet, PrioridadAsociadaViewSet,
     LineaEstrategiaViewSet, EstrategiaAsociadaViewSet,EstrategiaViewSet
 )
 
 router = DefaultRouter()
 
-
 router.register(r'sedes', SedeViewSet)
-router.register(r'facultades', FacultadViewSet)
-router.register(r'escuelas', EscuelaViewSet)
 router.register(r'personas', PersonaViewSet)
-router.register(r'estudiantes', EstudianteViewSet)
+router.register(r'unidades-organizativas', UnidadOrganizativaViewSet)
+router.register(r'vinculaciones', VinculacionViewSet)
 router.register(r'acciones', AccionViewSet)
 router.register(r'participaciones', ParticipacionViewSet)
 router.register(r'actividades', ActividadViewSet )
-router.register(r'temas', TemaViewSet)
-router.register(r'temas-asociados', TemaAsociadoViewSet)
+router.register(r'secciones', SeccionViewSet)
 router.register(r'estrategia', EstrategiaViewSet)
 router.register(r'prioridades', PrioridadViewSet)
 router.register(r'prioridades-asociadas', PrioridadAsociadaViewSet)
