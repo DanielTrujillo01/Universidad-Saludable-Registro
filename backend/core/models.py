@@ -64,9 +64,6 @@ class Persona(models.Model):
     edad = models.PositiveIntegerField(null=True, blank=True)
     correo = models.EmailField(null=True, blank=True, unique=True)
     sexo = models.CharField(max_length=20, null=True, blank=False)
-    unidadOrganizativa = models.ForeignKey(
-        UnidadOrganizativa, on_delete=models.SET_NULL, null=True, blank=True
-    )
 
     def __str__(self):
         return self.nombre
@@ -113,9 +110,8 @@ class Accion(models.Model):
 # -------------------------
 class Actividad(models.Model):
     id_actividad = models.AutoField(primary_key=True)
-    id_accion = models.ForeignKey(Accion, on_delete=models.CASCADE,null=False,blank=False)
     nombre = models.CharField(max_length=300)
-    nombre_original = models.CharField(max_length=300, null=False, blank=False)
+    nombre_original = models.CharField(max_length=300, null=False, blank=False) 
 
     def __str__(self):
         return self.nombre

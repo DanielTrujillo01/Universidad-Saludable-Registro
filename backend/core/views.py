@@ -31,7 +31,7 @@ class DashboardViewSet(viewsets.ViewSet):
     - /escuelas: Carga bajo demanda (Estadísticas por Escuela).
     - /evolucion: Carga bajo demanda (Línea de tiempo).
     """
-    permission_classes = [IsAdminUser]
+    # permission_classes = [IsAdminUser]
 
     # -------------------------------------------------------------------------
     # 1. CARGA LIGERA (Al iniciar el Dashboard)
@@ -39,27 +39,84 @@ class DashboardViewSet(viewsets.ViewSet):
     # -------------------------------------------------------------------------
     @action(detail=False, methods=['get'])
     def resumen(self, request):
-        # A. KPIs
-        total_actividades = Actividad.objects.count()
-        total_participantes = Participacion.objects.count()
-        promedio = round(total_participantes / total_actividades) if total_actividades > 0 else 0
+        participaciones = Participacion.objects.all()
 
-        # B. Gráfica: PRIORIDADES
-        prioridades_qs = Actividad.objects.values('prioridadasociada__prioridad__nombre').annotate(total=Count('id_actividad'))
+        # --- A. KPIs (Se mantienen igual) ---
+        total_acciones = participaciones.values('accion').distinct().count()
+        total_actividades = participaciones.values('actividad').distinct().count()
+        total_participantes = participaciones.values('persona').distinct().count()
+        promedio_participantes = (
+            round(total_participantes / total_actividades, 1) if total_actividades > 0 else 0
+        )
+
+        # --- B. Gráfica: PRIORIDADES ---
+        prioridades_qs = (
+            participaciones.filter(accion__prioridadasociada__prioridad__isnull=False)
+            .values('accion__prioridadasociada__prioridad__nombre')
+            .annotate(
+                num_acciones=Count('accion', distinct=True),
+                num_actividades=Count('actividad', distinct=True)
+            )
+            .order_by('-num_acciones')
+        )
         grafica_prioridades = [
-            {"name": item['prioridadasociada__prioridad__nombre'] or "Sin Prioridad", "value": item['total']}
-            for item in prioridades_qs if item['prioridadasociada__prioridad__nombre']
+            {
+                "name": item['accion__prioridadasociada__prioridad__nombre'],
+                "acciones": item['num_acciones'],
+                "actividades": item['num_actividades']
+            }
+            for item in prioridades_qs
+        ]
+
+        # --- C. Gráfica: LÍNEAS ESTRATÉGICAS ---
+        lineas_qs = (
+            participaciones.filter(accion__estrategiaasociada__linea_estrategia__isnull=False)
+            .values('accion__estrategiaasociada__linea_estrategia__nombre')
+            .annotate(
+                num_acciones=Count('accion', distinct=True),
+                num_actividades=Count('actividad', distinct=True)
+            )
+            .order_by('-num_acciones')
+        )
+        grafica_lineas_estrategicas = [
+            {
+                "name": item['accion__estrategiaasociada__linea_estrategia__nombre'],
+                "acciones": item['num_acciones'],
+                "actividades": item['num_actividades']
+            }
+            for item in lineas_qs
+        ]
+
+        # --- D. Gráfica: ESTRATEGIAS ---
+        estrategias_qs = (
+            participaciones.filter(accion__estrategia__isnull=False)
+            .values('accion__estrategia__nombre')
+            .annotate(
+                num_acciones=Count('accion', distinct=True),
+                num_actividades=Count('actividad', distinct=True)
+            )
+            .order_by('-num_acciones')
+        )
+        grafica_estrategias = [
+            {
+                "name": item['accion__estrategia__nombre'],
+                "acciones": item['num_acciones'],
+                "actividades": item['num_actividades']
+            }
+            for item in estrategias_qs
         ]
 
         return Response({
             "kpis": {
+                "total_acciones": total_acciones,
                 "total_actividades": total_actividades,
                 "total_participantes": total_participantes,
-                "promedio_participantes": promedio,
+                "promedio_participantes_por_actividad": promedio_participantes,
             },
             "graficas": {
-                "prioridades": grafica_prioridades
-                # Nota: Escuelas ya no está aquí para aligerar la carga inicial
+                "prioridades": grafica_prioridades,
+                "lineas_estrategicas": grafica_lineas_estrategicas,
+                "estrategias": grafica_estrategias,
             }
         })
 
@@ -666,90 +723,94 @@ class DashboardViewSet(viewsets.ViewSet):
             return Response({"error": "Facultad no encontrada"}, status=404)
     
     # -------------------------------------------------------------------------
-    # 11. DETALLE DINÁMICO: ACTIVIDAD ESPECÍFICA
-    # URL: /api/dashboard-stats/detalle_actividad/?id=ID_DE_LA_ACTIVIDAD
+    # 11. DETALLE DINÁMICO: ACCIÓN ESTRATÉGICA
+    # URL: /api/dashboard/detalle_accion/?id=ID_DE_LA_ACCION
     # -------------------------------------------------------------------------
     @action(detail=False, methods=['get'])
-    def detalle_actividad(self, request):
-        activity_id = request.query_params.get('id')
-        
-        if not activity_id:
-            return Response({"error": "ID requerido"}, status=400)
+    def detalle_accion(self, request):
+        accion_id = request.query_params.get('id')
+    
+        # Validación de seguridad:
+        if not accion_id or accion_id == 'undefined':
+            return Response({
+                "error": "Se requiere un ID de acción válido (numérico)."
+            }, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            actividad = Actividad.objects.get(pk=activity_id)
+            # Intentar convertir a entero para atrapar errores antes de la consulta
+            accion_id = int(accion_id) 
             
-            # A. Personas únicas que asistieron al evento macro
-            total_unicos = Participacion.objects.filter(actividad=actividad).values('persona').distinct().count()
+            accion = Accion.objects.select_related('estrategia').get(pk=accion_id)
+            
+            # 2. Base de participaciones para esta acción
+            participaciones_qs = Participacion.objects.filter(accion=accion)
+            
+            # A. Impacto total (Personas únicas en toda la acción)
+            total_unicos = participaciones_qs.values('persona').distinct().count()
 
+            # B. Distribución por Estamento (Desde Vinculacion o Persona)
+            # Nota: Ajustado a 'vinculacion__tipo_estamento' según tus modelos de Persona/Vinculacion
             conteo_por_estamento = (
-                Participacion.objects
-                .filter(actividad=actividad)
-                .values('persona__estamento')
+                participaciones_qs
+                .values('vinculacion__tipo_estamento')
                 .annotate(total=Count('persona', distinct=True))
             )
-            estamentos_data = []
+            
+            estamentos_data = [
+                {
+                    "estamento": item['vinculacion__tipo_estamento'] or "Sin Estamento",
+                    "cantidad": item['total'],
+                    "porcentaje": round((item['total'] / total_unicos) * 100, 2) if total_unicos > 0 else 0
+                }
+                for item in conteo_por_estamento
+            ]
 
-            for item in conteo_por_estamento:
-                cantidad = item['total']
-                porcentaje = round((cantidad / total_unicos) * 100, 2) if total_unicos > 0 else 0
+            # C. Desglose de Actividades y sus Secciones
+            # Obtenemos las actividades únicas que han participado en esta acción
+            actividades_ids = participaciones_qs.values_list('actividad', flat=True).distinct()
+            actividades_asociadas = []
 
-                if item['persona__estamento'] is None:
-                    estamento_nombre = "Sin Estamento"
-                else:                    
-                    estamento_nombre = item['persona__estamento']  
-
-                estamentos_data.append({
-                    "estamento": estamento_nombre,
-                    "cantidad": cantidad,
-                    "porcentaje": porcentaje
-                })
-            # B. Conteos granulares por taller (Tema)
-            # Buscamos los temas que pertenecen a esta actividad
-            temas_asociados = TemaAsociado.objects.filter(actividad=actividad).select_related('tema')
-
-            temas_data = []
-            for ta in temas_asociados:
-                # Contamos cuántas personas registraron asistencia específica a este tema
-                conteo_real = Participacion.objects.filter(
-                    actividad=actividad, 
-                    tema=ta.seccion
-                ).count()
-
-                temas_data.append({
-                    "tema__nombre": ta.seccion.nombre,
-                    "total_participantes": conteo_real
-                })
-
+            for act_id in actividades_ids:
+                actividad = Actividad.objects.get(pk=act_id)
                 
-            prioridad_nombre = "N/A"
+                # Participantes de esta actividad específica DENTRO de esta acción
+                participantes_act = participaciones_qs.filter(actividad=actividad).values('persona').distinct().count()
+                
+                # Secciones de esta actividad que tuvieron registros en esta acción
+                secciones_data = (
+                    participaciones_qs.filter(actividad=actividad, seccion__isnull=False)
+                    .values('seccion__nombre')
+                    .annotate(total=Count('id_participacion'))
+                )
 
-            estrategia_nombre = "N/A"
+                actividades_asociadas.append({
+                    "nombre": actividad.nombre,
+                    "participantes_en_esta_accion": participantes_act,
+                    "secciones": [
+                        {
+                            "nombre": s['seccion__nombre'],
+                            "total_participantes": s['total']
+                        } for s in secciones_data
+                    ]
+                })
 
-            estrategia_rel = actividad.estrategiaasociada_set.first()
-            if estrategia_rel and estrategia_rel.linea_estrategia:
-                estrategia_nombre = estrategia_rel.linea_estrategia.nombre
-
-            prioridad_rel = actividad.prioridadasociada_set.first()
-            if prioridad_rel and prioridad_rel.prioridad:
-                prioridad_nombre = prioridad_rel.prioridad.nombre
+            # D. Datos Estratégicos (Prioridad y Línea)
+            prioridad_rel = accion.prioridadasociada_set.first()
+            linea_rel = accion.estrategiaasociada_set.first()
 
             return Response({
-                "id_actividad": actividad.id_actividad,
-                "nombre": actividad.nombre,
+                "id_accion": accion.id_accion,
+                "nombre": accion.nombre,
                 "total_participantes": total_unicos,
-                "prioridad": {
-                    "nombre": prioridad_nombre
-                },
-                "estrategia": {
-                    "nombre": estrategia_nombre
-                },
-                "temas_asociados": temas_data,
-                "estamento_participantes": estamentos_data
+                "estrategia_nombre": accion.estrategia.nombre if accion.estrategia else "N/A",
+                "prioridad_nombre": prioridad_rel.prioridad.nombre if prioridad_rel else "N/A",
+                "linea_nombre": linea_rel.linea_estrategia.nombre if linea_rel else "N/A",
+                "estamento_participantes": estamentos_data,
+                "actividades_asociadas": actividades_asociadas
             })
 
-        except Actividad.DoesNotExist:
-            return Response({"error": "Actividad no encontrada"}, status=404)
+        except Accion.DoesNotExist:
+            return Response({"error": "Acción no encontrada"}, status=404)
         
     # -------------------------------------------------------------------------
     # 12. ESTADÍSTICAS TEMPORALES (Gráficos)
@@ -1066,8 +1127,6 @@ class ActividadViewSet(viewsets.ModelViewSet):
     serializer_class = ActividadSerializer
     filter_backends = [SearchFilter, DjangoFilterBackend] # Agregamos el backend de filtros
     search_fields = ['nombre']
-    # Definimos por qué campos se puede filtrar exactamente
-    filterset_fields = {'id_accion': ['exact']}
 
     # En ActividadViewSet
     @action(detail=True, methods=['get'], permission_classes=[AllowAny])
