@@ -1049,52 +1049,11 @@ class AccionViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'], permission_classes=[AllowAny])
     def actividades(self, request, pk=None):
-        """
-        Devuelve las actividades asociadas a una acción.
-        """
         actividades = Actividad.objects.filter(
             actividadasociada__accion_id=pk
         ).values('id_actividad', 'nombre').distinct()
 
         return Response(list(actividades))
-    
-    def create(self, request, *args, **kwargs):
-        # 1. Extraemos los IDs de las relaciones opcionales
-        prioridad_id = request.data.get('id_prioridad')
-        linea_estrategia_id = request.data.get('id_linea_estrategia')
-
-        # 2. Usamos una transacción atómica para garantizar integridad
-        with transaction.atomic():
-            # A. Crear la Accion basica base
-            serializer = self.get_serializer(data=request.data)
-            serializer.is_valid(raise_exception=True)
-            self.perform_create(serializer)
-            accion_instance = serializer.instance
-
-            # C. Crear Relación: Prioridad (PrioridadAsociada)
-            if prioridad_id:
-                try:
-                    p_instance = Prioridad.objects.get(pk=prioridad_id)
-                    PrioridadAsociada.objects.create(
-                        accion=accion_instance,
-                        prioridad=p_instance
-                    )
-                except Prioridad.DoesNotExist:
-                    pass
-
-            # D. Crear Relación: LineaEstrategia (EstrategiaAsociada)
-            if linea_estrategia_id:
-                try:
-                    le_instance = LineaEstrategia.objects.get(pk=linea_estrategia_id)
-                    EstrategiaAsociada.objects.create(
-                        accion=accion_instance,
-                        linea_estrategia=le_instance
-                    )
-                except LineaEstrategia.DoesNotExist:
-                    pass
-
-            headers = self.get_success_headers(serializer.data)
-            return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
 class ParticipacionViewSet(viewsets.ModelViewSet):
     queryset = Participacion.objects.all()
@@ -1112,45 +1071,11 @@ class ActividadViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'], permission_classes=[AllowAny])
     def temas(self, request, pk=None):
-        """
-        Devuelve los temas asociados a una actividad.
-        """
         temas = Tema.objects.filter(
             temaasociado__actividad_id=pk
         ).values('id_tema', 'nombre').distinct()
 
         return Response(list(temas))
-    
-    def create(self, request, *args, **kwargs):
-        # 1. Extraemos el id_accion del cuerpo de la petición (si viene)
-        accion_id = request.data.get('id_accion')
-
-        # Usamos atomic para asegurar que si falla la asociación, no se cree la actividad suelta
-        with transaction.atomic():
-            # 2. Creamos la Actividad normalmente usando el método del padre
-            serializer = self.get_serializer(data=request.data)
-            serializer.is_valid(raise_exception=True)
-            self.perform_create(serializer)
-
-            actividad_instance = serializer.instance
-
-            # 3. Si se envió una acción, creamos la relación en ActividadAsociada
-            if accion_id:
-                try:
-                    accion_instance = Accion.objects.get(pk=accion_id)
-                    ActividadAsociada.objects.create(
-                        accion=accion_instance,
-                        actividad=actividad_instance
-                    )
-                except Accion.DoesNotExist:
-                    # Retornamos error si el ID de acción no existe
-                    return Response(
-                        {"error": "La acción especificada no existe"},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-
-            headers = self.get_success_headers(serializer.data)
-            return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
         
 # --------------------------------------------------------
 # TEMA VIEWSET (MODIFICADO PARA CREACIÓN CONJUNTA)
@@ -1160,38 +1085,6 @@ class TemaViewSet(viewsets.ModelViewSet):
     serializer_class = TemaSerializer
     filter_backends = [SearchFilter]
     search_fields = ['nombre']
-
-    def create(self, request, *args, **kwargs):
-        # 1. Extraemos el id_actividad del cuerpo de la petición (si viene)
-        actividad_id = request.data.get('id_actividad')
-        
-        # Usamos atomic para asegurar que si falla la asociación, no se cree el tema suelto
-        with transaction.atomic():
-            # 2. Creamos el Tema normalmente usando el método del padre
-            serializer = self.get_serializer(data=request.data)
-            serializer.is_valid(raise_exception=True)
-            self.perform_create(serializer)
-            
-            tema_instance = serializer.instance
-            
-            # 3. Si se envió una actividad, creamos la relación en TemaAsociado
-            if actividad_id:
-                try:
-                    actividad_instance = Actividad.objects.get(pk=actividad_id)
-                    TemaAsociado.objects.create(
-                        tema=tema_instance,
-                        actividad=actividad_instance
-                    )
-                except Actividad.DoesNotExist:
-                    # Puedes decidir si lanzar error o solo ignorarlo. 
-                    # Aquí retornamos error para que el frontend sepa que el ID era malo.
-                    return Response(
-                        {"error": "La actividad especificada no existe"}, 
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-
-            headers = self.get_success_headers(serializer.data)
-            return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
 
 class TemaAsociadoViewSet(viewsets.ModelViewSet):
